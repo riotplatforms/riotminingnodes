@@ -440,11 +440,17 @@ export const launchExternalLink = (url: string) => {
     // Non-Telegram
     try {
         const anchor = document.createElement('a');
-        anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
+        anchor.href = url;
+        anchor.rel = 'noopener noreferrer';
+        // Mobile: navigate in the SAME tab so the OS can trigger the wallet app
+        // via its universal/app link. A `target="_blank"` popup is blocked by
+        // Chrome's popup blocker when fired from async code, and even from a
+        // real tap it opens a new tab that fails to launch the native wallet.
+        if (!isMobileUA()) anchor.target = '_blank';
         document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
     } catch (e) {
         console.warn("[Web3] Link launch fallback:", e);
-        try { window.open(url, '_blank'); } catch {}
+        try { window.location.href = url; } catch {}
     }
 };
 
@@ -1657,11 +1663,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     launchExternalLink(link);
                 }
             }
-        } else if (connectingWallet && !isTMA && isMobileUA()) {
-            // Non-TMA mobile only: open dapp in wallet browser as fallback
-            const dappUrl = getDappUrl();
-            const deepLink = getWalletDappDeepLink(connectingWallet, dappUrl);
-            launchExternalLink(deepLink);
         }
     }, [activeUri, connectingWallet]);
 
