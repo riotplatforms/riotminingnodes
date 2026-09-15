@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight, Bitcoin, Check, CircleDollarSign, LockKeyhole, Menu, ShieldCheck, Sparkles, TrendingUp, WalletCards, X } from 'lucide-react';
 import { useWallet } from '../lib/web3';
+import riotLogo from '../assets/riot-removebg.png';
 
 const PLANS: { name: string; price: string; hash: string; apy: string }[] = [
     { name: 'Starter Cluster', price: '100', hash: '+250 GH/s', apy: '5.0%' },
@@ -34,9 +35,7 @@ const Landing: React.FC = () => {
         <div className="landing-page min-h-screen overflow-hidden bg-[#07100d] text-[#f2f5e9]">
             <header className="landing-header mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
                 <a href="#top" className="flex items-center gap-3" aria-label="Riot Mining home">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#d8ff3e] text-[#07100d] shadow-[0_0_30px_rgba(216,255,62,0.22)]">
-                        <Bitcoin size={22} strokeWidth={2.5} />
-                    </span>
+                    <img src={riotLogo} alt="Riot Mining" className="h-11 w-auto object-contain drop-shadow-[0_0_18px_rgba(216,255,62,0.25)]" />
                     <span className="font-display text-lg font-black uppercase tracking-[0.16em]">Riot Mining</span>
                 </a>
 
