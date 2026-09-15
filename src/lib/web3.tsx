@@ -439,15 +439,18 @@ export const launchExternalLink = (url: string) => {
 
     // Non-Telegram
     try {
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.rel = 'noopener noreferrer';
-        // Mobile: navigate in the SAME tab so the OS can trigger the wallet app
-        // via its universal/app link. A `target="_blank"` popup is blocked by
-        // Chrome's popup blocker when fired from async code, and even from a
-        // real tap it opens a new tab that fails to launch the native wallet.
-        if (!isMobileUA()) anchor.target = '_blank';
-        document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
+        // Mobile: same-tab navigation via location.href is the most reliable
+        // way to fire the wallet's universal/app link. A `target="_blank"`
+        // popup is blocked by Chrome's popup blocker when fired from async
+        // code, and a synthetic anchor.click() is not always treated as a
+        // user gesture needed to launch the native wallet app.
+        if (isMobileUA()) {
+            window.location.href = url;
+        } else {
+            const anchor = document.createElement('a');
+            anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
+            document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
+        }
     } catch (e) {
         console.warn("[Web3] Link launch fallback:", e);
         try { window.location.href = url; } catch {}
