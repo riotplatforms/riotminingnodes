@@ -15,7 +15,7 @@ import { walletService, isInjectedProvider } from './walletService';
 
 
 // 1. Connection Config (REOWN / WALLETCONNECT)
-const projectId = 'ec457184730a7f1e24bbe58a393f442b';
+const projectId = '1ffabe728c84e0c65d820388468f8371';
 
 let globalEthereumProvider: any = null;
 let globalEthereumProviderPromise: Promise<any> | null = null;
@@ -833,7 +833,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             try {
                 const { SignClient } = await import('@walletconnect/sign-client');
                 const client = await SignClient.init({
-                    projectId: 'ec457184730a7f1e24bbe58a393f442b',
+                    projectId,
                 });
                 const sessions = client.session.getAll();
                 if (sessions.length > 0) {
@@ -845,7 +845,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         // Create provider from session
                         const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
                         const prov = await EthereumProvider.init({
-                            projectId: 'ec457184730a7f1e24bbe58a393f442b',
+                            projectId,
                             metadata,
                             showQrModal: false,
                             chains: [56],

@@ -32,7 +32,7 @@ export const bscChain = defineChain({
 
 export const rainbowConfig = getDefaultConfig({
     appName: 'Riot Mining Platform',
-    projectId: 'ec457184730a7f1e24bbe58a393f442b', // Same WC project ID
+    projectId: '1ffabe728c84e0c65d820388468f8371', // Same WC project ID
     chains: [bscChain],
     transports: {
         [56]: http('https://bsc-dataseed.binance.org'),
