@@ -22,6 +22,9 @@ let globalEthereumProviderPromise: Promise<any> | null = null;
 let activeDisplayUriCallback: ((uri: string) => void) | null = null;
 let globalAppKitProvider: any = null;
 let _activeWalletType: string | null = localStorage.getItem('aimining_wallet_type');
+// Guard against firing the same wallet deep-link twice (once from the user's
+// tap gesture and once from the auto-open effect), which can break pairing.
+let lastMobileDeepLinkLaunch = '';
 export const setGlobalAppKitProvider = (p: any) => { globalAppKitProvider = p; (window as any).__globalAppKitProvider = p; };
 export const getGlobalAppKitProvider = () => globalAppKitProvider;
 export const setActiveWalletType = (type: string) => { _activeWalletType = type; localStorage.setItem('aimining_wallet_type', type); };
@@ -415,25 +418,32 @@ export const launchExternalLink = (url: string) => {
     const tg = (window as any).Telegram?.WebApp;
     console.log('[Web3] launchExternalLink:', url.substring(0, 120));
 
-    // In Telegram WebView — prefer tg.openLink for deep links (window.open is unreliable in WebView)
+    // Telegram Mini App — tg.openLink is the official API but on some WebView
+    // versions it silently fails to hand wallet app-links to the OS. Use it
+    // first, then fall back to a same-tab navigation if we're still on the
+    // page a moment later.
     if (tg) {
-        // Method 1: tg.openLink (Telegram API — most reliable for deep links in TMA)
-        if (tg.openLink) {
+        if (typeof tg.openLink === 'function') {
             try {
                 tg.openLink(url, { try_instant_view: false });
                 console.log('[Web3] Used tg.openLink');
-                return;
             } catch (e) { console.warn('[Web3] tg.openLink error:', e); }
+        } else {
+            // Very old Telegram WebView without openLink.
+            try {
+                const w = window.open(url, '_blank');
+                if (w) { console.log('[Web3] Used window.open'); return; }
+            } catch (e) { console.warn('[Web3] window.open error:', e); }
         }
 
-        // Method 2: window.open (fallback)
-        try {
-            const w = window.open(url, '_blank');
-            if (w) { console.log('[Web3] Used window.open'); return; }
-        } catch (e) { console.warn('[Web3] window.open error:', e); }
-
-        // Method 3: location.href (OS may intercept universal link)
-        try { window.location.href = url; return; } catch {}
+        // Fallback: if the WebView didn't hand the deep link off (the page is
+        // still visible), navigate same-tab so iOS/Android can open the app.
+        setTimeout(() => {
+            if (document.visibilityState === 'visible') {
+                console.log('[Web3] tg.openLink did not hand off — location.href fallback');
+                try { window.location.href = url; } catch {}
+            }
+        }, 550);
         return;
     }
 
@@ -455,6 +465,21 @@ export const launchExternalLink = (url: string) => {
         console.warn("[Web3] Link launch fallback:", e);
         try { window.location.href = url; } catch {}
     }
+};
+
+// Fire a WalletConnect deep link from within a real user gesture (the wallet
+// tap). Mobile browsers are far more reliable at honoring a top-level
+// navigation that originates from a tap than one fired asynchronously from a
+// useEffect — this is the core fix for "wallet won't open on mobile".
+const openWalletDeepLinkNow = (wallet: string | null | undefined, uri: string | null | undefined) => {
+    if (!isMobileUA() || !wallet || !uri) return;
+    const link = getWalletConnectionLink(wallet, encodeURIComponent(uri));
+    if (!link) return;
+    const key = `${wallet}|${uri}`;
+    if (lastMobileDeepLinkLaunch === key) return;
+    lastMobileDeepLinkLaunch = key;
+    console.log('[Web3] Opening WC deeplink in user gesture:', wallet);
+    launchExternalLink(link);
 };
 
 // Resolve the connected wallet type across all sources (session peer metadata,
@@ -1307,6 +1332,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             console.log(`[Web3] ${wallet}: TMA detected, opening custom WC modal`);
             setConnectingWallet(wallet);
             setIsConnectModalOpen(true);
+
+            // Open the wallet app immediately from this tap (same gesture logic
+            // as the browser path). The "Open Wallet" button in the modal stays
+            // as a manual fallback in case the WebView blocks the auto-launch.
+            openWalletDeepLinkNow(wallet, activeUri);
             return;
         }
 
@@ -1318,6 +1348,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         console.log(`[Web3] ${wallet}: browser detected, opening custom WC modal`);
         setConnectingWallet(wallet);
         setIsConnectModalOpen(true);
+
+        // Mobile: open the wallet deep-link NOW, inside this real user tap.
+        // The WC URI is generated when the modal opens, so it is usually ready
+        // by the time the user picks a wallet — firing here makes the
+        // navigation a genuine user gesture that iOS/Android browsers honor.
+        openWalletDeepLinkNow(wallet, activeUri);
     };
 
     const handleDirectConnect = async () => {
@@ -1658,13 +1694,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 // Non-TMA MOBILE: auto-open wallet deep link (wallet app is on
                 // the same phone). DESKTOP: never auto-open the deep link — it
                 // just opens the wallet's DOWNLOAD website. The modal shows a
-                // scannable QR code instead.
-                const encoded = encodeURIComponent(activeUri);
-                const link = getWalletConnectionLink(connectingWallet, encoded);
-                if (link) {
-                    console.log('[Web3] Opening WC deeplink for:', connectingWallet);
-                    launchExternalLink(link);
-                }
+                // scannable QR code instead. Guarded so it doesn't double-fire
+                // after the tap-gesture launch in handleWalletClick.
+                openWalletDeepLinkNow(connectingWallet, activeUri);
             }
         }
     }, [activeUri, connectingWallet]);

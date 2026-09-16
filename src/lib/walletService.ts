@@ -339,6 +339,13 @@ export function openWalletApp(walletType?: string, provider?: any): boolean {
         const tg = (window as any).Telegram?.WebApp;
         if (tg?.openLink) {
             tg.openLink(link, { try_instant_view: false });
+            // Fallback: if the WebView didn't hand the app link off (still on
+            // this page), navigate same-tab so the OS can open the wallet.
+            setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    try { window.location.href = link; } catch {}
+                }
+            }, 550);
         } else {
             window.open(link, '_blank');
         }
