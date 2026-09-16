@@ -330,10 +330,14 @@ export function openWalletApp(walletType?: string, provider?: any): boolean {
     // e.g. trust://) over a generic homepage deep-link that just opens the
     // wallet's marketing website.
     const session = provider?.session || provider?.provider?.session || null;
-    const sessionLink = session?.peer?.metadata?.redirect?.native ||
-                        session?.peer?.metadata?.redirect?.universal ||
-                        null;
-    const link = sessionLink || getWalletOpenLink(walletType);
+    const native = session?.peer?.metadata?.redirect?.native || null;
+    const universal = session?.peer?.metadata?.redirect?.universal || null;
+    const inTelegram = !!(window as any).Telegram?.WebApp;
+    // Native scheme opens the wallet app directly. The universal/homepage link
+    // is only meaningful in Telegram (tg.openLink can't open custom schemes);
+    // in a normal mobile browser it opens the wallet's dApp browser / download
+    // page, so we skip it there.
+    const link = native || (inTelegram ? (universal || getWalletOpenLink(walletType)) : null);
     if (!link) return false;
     try {
         const tg = (window as any).Telegram?.WebApp;

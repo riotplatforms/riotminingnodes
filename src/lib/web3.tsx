@@ -92,31 +92,17 @@ const checkIsWalletConnect = (provider: any): boolean => {
 };
 
 const getRedirectLinkForProvider = (provider: any): string | null => {
-    let walletType = localStorage.getItem('aimining_wallet_type');
-    
     const session = provider?.session || provider?.provider?.session;
-    if (session?.peer?.metadata) {
-        const meta = session.peer.metadata;
-        // Prefer the wallet's own redirect (native first, then universal) — this
-        // opens the wallet app directly instead of its marketing homepage.
-        if (meta.redirect?.native) return meta.redirect.native;
-        if (meta.redirect?.universal) return meta.redirect.universal;
-        if (!walletType || walletType === 'walletconnect') {
-            const peerName = (meta.name || '').toLowerCase();
-            if (peerName.includes('metamask')) walletType = 'metamask';
-            else if (peerName.includes('trust')) walletType = 'trust';
-            else if (peerName.includes('safepal')) walletType = 'safepal';
-            else if (peerName.includes('tokenpocket')) walletType = 'tokenpocket';
-            else if (peerName.includes('binance')) walletType = 'binance';
-            else if (peerName.includes('okx')) walletType = 'okx';
-            else if (peerName.includes('bitget')) walletType = 'bitget';
-        }
-    }
-
-    if (walletType) {
-        localStorage.setItem('aimining_wallet_type', walletType);
-        return WALLET_REDIRECT_LINKS[walletType.toLowerCase()] || null;
-    }
+    const meta = session?.peer?.metadata;
+    // Native redirect opens the wallet APP directly, which then shows the
+    // pending WalletConnect approval — the only link that avoids the wallet's
+    // "dApp browser" / download page on mobile Chrome.
+    if (meta?.redirect?.native) return meta.redirect.native;
+    // tg.openLink cannot open custom schemes, so only use the universal (https)
+    // link inside Telegram. In a normal browser it bounces to the wallet's dApp
+    // browser/download page, so return null and let the WC relay deliver the
+    // approval request instead.
+    if (meta?.redirect?.universal && !!(window as any).Telegram?.WebApp) return meta.redirect.universal;
     return null;
 };
 const detectWalletFromPeerName = (peerName: string): string | null => {
@@ -1453,6 +1439,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         localStorage.setItem('aimining_address', connectedAddress);
                         setIsWalletConnect(true);
                         localStorage.setItem('aimining_is_walletconnect', 'true');
+                        // Persist the wallet type from the restored WC session so
+                        // approval deep-links open the CORRECT wallet (not a
+                        // default like MetaMask) after a page reload.
+                        try {
+                            const peerName = provider.session?.peer?.metadata?.name || '';
+                            const wt = detectWalletFromPeerName(peerName);
+                            if (wt) {
+                                setWalletType(wt);
+                                setActiveWalletType(wt);
+                            }
+                        } catch { /* ignore */ }
                         return;
                     }
                     }
