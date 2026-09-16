@@ -718,6 +718,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const [activeProvider, setActiveProvider] = useState<any>(null);
     const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
     const [isGeneratingUri, setIsGeneratingUri] = useState<boolean>(false);
+    const [connectError, setConnectError] = useState<string | null>(null);
+    const connectTimeoutRef = React.useRef<any>(null);
     const [miningStats, setMiningStats] = useState<any>({
         balance: '0.00000000000000',
         miningPower: '0.0',
@@ -1547,12 +1549,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return false;
     };
 
-    const prepareWalletConnect = async () => {
-        if (isGeneratingUri) {
+    const prepareWalletConnect = async (force = false) => {
+        if (isGeneratingUri && !force) {
             console.log('[Web3] prepareWalletConnect already running, skipping');
             return;
         }
         setIsGeneratingUri(true);
+        setConnectError(null);
         console.log('[Web3] prepareWalletConnect starting...');
         try {
             // Always create a FRESH provider — reusing a stale provider after a failed
@@ -1615,6 +1618,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             // Define new listener
             activeDisplayUriCallback = (uri: string) => {
                 console.log("[Web3] Generated display_uri:", uri);
+                if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
+                setConnectError(null);
                 setActiveUri(uri);
             };
             provider.on('display_uri', activeDisplayUriCallback);
@@ -1622,13 +1627,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setActiveProvider(provider);
             setIsGeneratingUri(false);
 
+            // If no URI is produced within 15s, surface a clear error instead of
+            // an infinite spinner (relay unreachable / firewall / projectId).
+            if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
+            connectTimeoutRef.current = setTimeout(() => {
+                console.warn('[Web3] Connect timeout — no WC URI after 15s');
+                setConnectError('WalletConnect relay is not responding. Check your internet connection, firewall, or projectId.');
+            }, 15000);
+
             try {
                 console.log('[Web3] Calling provider.connect() (fire-and-forget)...');
                 provider.connect().then(() => {
                     console.log('[Web3] provider.connect() resolved');
+                    if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
                     checkAndFinalizeConnection(provider);
                 }).catch((err: any) => {
                     console.warn('[Web3] provider.connect() rejected:', err?.message);
+                    setConnectError(err?.message || 'WalletConnect connection failed.');
                 });
 
                 // Listen on signClient directly (survives provider.connect rejection)
@@ -1668,7 +1683,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setActiveUri(null);
             setActiveProvider(null);
             setConnectingWallet(null);
+            setConnectError((err as any)?.message || 'Failed to initialize WalletConnect.');
         }
+    };
+
+    // Retry the WalletConnect URI generation after an error (relay timeout, etc).
+    const retryConnect = () => {
+        if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
+        setConnectError(null);
+        setActiveUri(null);
+        setActiveProvider(null);
+        setIsGeneratingUri(false);
+        lastMobileDeepLinkLaunch = ''; // allow the deep link to fire again
+        prepareWalletConnect(true);
     };
 
     // Fast URI generation for TMA — removed (unused after TMA dapp browser approach)
@@ -1935,12 +1962,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                     </button>
                                     )
                                 ) : (
-                                    // WC URI not ready yet — show loading state, NO DApp browser redirect
+                                    // WC URI not ready yet — show loading state, or a clear
+                                    // error + retry if the relay could not be reached.
                                     <div className="flex flex-col items-center gap-3 mt-2">
-                                        <div className="w-6 h-6 border-2 border-[#FFD700]/30 border-t-[#FFD700] rounded-full animate-spin"></div>
-                                        <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
-                                            Generating secure connection link...
-                                        </div>
+                                        {connectError ? (
+                                            <>
+                                                <div className="text-center text-[11px] font-bold text-red-400 px-4 leading-relaxed max-w-xs">
+                                                    Could not connect to the WalletConnect relay:
+                                                    <span className="block text-gray-400 font-medium break-words mt-1">{connectError}</span>
+                                                </div>
+                                                <button
+                                                    onClick={retryConnect}
+                                                    className="mt-1 bg-[#FFD700] text-black px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-[2px] cursor-pointer border-none"
+                                                >
+                                                    Retry connection
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="w-6 h-6 border-2 border-[#FFD700]/30 border-t-[#FFD700] rounded-full animate-spin"></div>
+                                                <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
+                                                    Generating secure connection link...
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>
