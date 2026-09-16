@@ -1,16 +1,7 @@
 import React from 'react';
-import { ArrowRight, Award, Bitcoin, Check, CircleDollarSign, Cpu, Gauge, LockKeyhole, MapPin, Menu, Network, Server, ShieldCheck, Sparkles, TrendingUp, X, Zap } from 'lucide-react';
+import { ArrowRight, Award, Bitcoin, Check, CircleDollarSign, Cloud, Cpu, Gauge, HardDrive, LockKeyhole, MapPin, Menu, Network, Server, ShieldCheck, Sparkles, TrendingUp, TriangleAlert, X, Zap } from 'lucide-react';
 import { useWallet } from '../lib/web3';
 import riotLogo from '../assets/riot-removebg.png';
-
-const REFERRALS: { levels: string; rate: string; label: string; featured?: boolean }[] = [
-    { levels: 'Level 1', rate: '5%', label: 'Direct referral', featured: true },
-    { levels: 'Level 2', rate: '3%', label: 'Secondary network' },
-    { levels: 'Level 3', rate: '2%', label: 'Tertiary volume' },
-    { levels: 'Levels 4-6', rate: '1%', label: 'Intermediate tier' },
-    { levels: 'Levels 7-9', rate: '1%', label: 'Global executive' },
-    { levels: 'Level 10', rate: '1%', label: 'Diamond master' },
-];
 
 const Landing: React.FC = () => {
     const { connect } = useWallet();
@@ -30,8 +21,8 @@ const Landing: React.FC = () => {
 
                 <nav className="hidden items-center gap-8 text-sm font-semibold text-[#a9b3a1] md:flex">
                     <a href="#how-it-works" className="transition-colors hover:text-[#d8ff3e]">Bitcoin mining</a>
+                    <a href="#mining-methods" className="transition-colors hover:text-[#d8ff3e]">Mining methods</a>
                     <a href="#riot-platforms" className="transition-colors hover:text-[#d8ff3e]">Riot Platforms</a>
-                    <a href="#referrals" className="transition-colors hover:text-[#d8ff3e]">Referral</a>
                     <a href="#benefits" className="transition-colors hover:text-[#d8ff3e]">Benefits</a>
                     <a href="#security" className="transition-colors hover:text-[#d8ff3e]">Security</a>
                 </nav>
@@ -49,8 +40,8 @@ const Landing: React.FC = () => {
             {menuOpen && (
                 <nav className="mx-5 flex flex-col gap-4 border-y border-white/10 px-2 py-5 text-sm font-semibold text-[#a9b3a1] md:hidden">
                     <a href="#how-it-works" onClick={() => setMenuOpen(false)}>Bitcoin mining</a>
+                    <a href="#mining-methods" onClick={() => setMenuOpen(false)}>Mining methods</a>
                     <a href="#riot-platforms" onClick={() => setMenuOpen(false)}>Riot Platforms</a>
-                    <a href="#referrals" onClick={() => setMenuOpen(false)}>Referral</a>
                     <a href="#benefits" onClick={() => setMenuOpen(false)}>Benefits</a>
                     <a href="#security" onClick={() => setMenuOpen(false)}>Security</a>
                     <button onClick={handleConnect} className="landing-button mt-2 w-full">Connect wallet <ArrowRight size={16} /></button>
@@ -160,45 +151,87 @@ const Landing: React.FC = () => {
                     </div>
                 </section>
 
-                <section id="referrals" className="border-t border-white/10 py-24">
-                    <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr]">
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">Referral income</p>
-                            <h2 className="mt-4 font-display text-4xl font-black uppercase leading-none sm:text-5xl">Earn as your network grows.</h2>
-                            <p className="mt-5 max-w-md text-base leading-7 text-[#a9b3a1]">Invite others to mine with you and earn a share of their mining yield across 10 levels — credited every 37-day cycle.</p>
+                <section id="mining-methods" className="border-t border-white/10 py-24">
+                    <div className="text-center">
+                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">Ways to mine Bitcoin</p>
+                        <h2 className="mt-4 font-display text-4xl font-black uppercase leading-none sm:text-5xl">Traditional mining vs cloud mining.</h2>
+                        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#a9b3a1]">
+                            Both paths secure the same Bitcoin network through proof of work — the difference is who owns and runs the hardware. Here is how each one works.
+                        </p>
+                    </div>
 
-                            <div className="mt-8 space-y-4">
-                                <div className="flex items-center gap-4 rounded-2xl border border-[#d8ff3e]/25 bg-[#d8ff3e]/5 p-5">
-                                    <span className="font-display text-4xl font-black text-[#d8ff3e]">5%</span>
-                                    <div>
-                                        <p className="font-bold">Direct referral yield</p>
-                                        <p className="text-sm text-[#879487]">Earn 5% from Level 1 on every cycle.</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-                                    <span className="font-display text-4xl font-black text-[#f4f7ec]">$20</span>
-                                    <div>
-                                        <p className="font-bold">Invitation income</p>
-                                        <p className="text-sm text-[#879487]">Bonus paid when your invite activates a node.</p>
-                                    </div>
+                    <div className="mt-12 grid gap-5 lg:grid-cols-2">
+                        <div className="rounded-3xl border border-white/10 bg-[#0c1a13] p-7">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#d8ff3e]/10 text-[#d8ff3e]"><HardDrive size={22} /></div>
+                                <div>
+                                    <span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Traditional (self) mining</span>
+                                    <h3 className="font-display text-2xl font-black uppercase leading-none">Run it yourself</h3>
                                 </div>
                             </div>
-                        </div>
+                            <p className="mt-5 text-sm leading-6 text-[#a9b3a1]">You buy the machines, power them, and run them around the clock. You keep full ownership — and full responsibility — for the operation.</p>
 
-                        <div className="flex flex-col gap-3">
-                            {REFERRALS.map((r) => (
-                                <div key={r.levels} className={`landing-referral-row ${r.featured ? 'landing-referral-row--featured' : ''}`}>
-                                    <div className="flex items-center gap-4">
-                                        <span className="landing-referral-rate">{r.rate}</span>
-                                        <div>
-                                            <strong>{r.levels}</strong>
-                                            <p>{r.label}</p>
-                                        </div>
-                                    </div>
-                                    <ArrowRight size={16} className="shrink-0 text-[#879487]" />
-                                </div>
-                            ))}
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">How it works</p>
+                            <div className="mt-3 space-y-2.5 text-sm leading-6 text-[#a9b3a1]">
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">1.</span><span>Buy ASIC hardware — specialized computers built to solve Bitcoin's SHA-256 puzzle.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">2.</span><span>Power, cool and connect them — machines run 24/7, so cheap electricity and good ventilation matter.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">3.</span><span>Point your hashrate at a mining pool so rewards are split in proportion to your power.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">4.</span><span>Earn the block reward — currently 3.125 BTC per block — plus transaction fees.</span></p>
+                            </div>
+
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">The upside</p>
+                            <div className="mt-3 space-y-2 text-sm text-[#a9b3a1]">
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> Full ownership and control of every machine.</p>
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> Keep the upside if Bitcoin's price rises.</p>
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> No third party sits between you and your rewards.</p>
+                            </div>
+
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">The trade-offs</p>
+                            <div className="mt-3 space-y-2 text-sm text-[#a9b3a1]">
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> High upfront cost for miners and a constant electricity bill.</p>
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> Noise, heat, and ongoing maintenance are yours to handle.</p>
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> Hardware can become obsolete as mining difficulty rises.</p>
+                            </div>
                         </div>
+                        <div className="rounded-3xl border border-[#d8ff3e]/25 bg-[#d8ff3e]/5 p-7">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#d8ff3e]/10 text-[#d8ff3e]"><Cloud size={22} /></div>
+                                <div>
+                                    <span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Cloud mining</span>
+                                    <h3 className="font-display text-2xl font-black uppercase leading-none">Rent the hashrate</h3>
+                                </div>
+                            </div>
+                            <p className="mt-5 text-sm leading-6 text-[#a9b3a1]">You rent a share of a data center's mining power instead of buying hardware. The operator runs everything on your behalf.</p>
+
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">How it works</p>
+                            <div className="mt-3 space-y-2.5 text-sm leading-6 text-[#a9b3a1]">
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">1.</span><span>Buy a contract that rents a fixed amount of hashrate for a set period.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">2.</span><span>The provider runs the ASIC fleet and pays electricity, cooling, and maintenance.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">3.</span><span>After fees, your share of mining rewards is credited to your account.</span></p>
+                                <p className="flex gap-2.5"><span className="font-display font-black text-[#d8ff3e]">4.</span><span>No hardware or technical setup — you simply watch earnings from a dashboard.</span></p>
+                            </div>
+
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">The upside</p>
+                            <div className="mt-3 space-y-2 text-sm text-[#a9b3a1]">
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> No hardware, electricity, heat, or noise to manage.</p>
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> A low barrier to entry — start with a smaller amount.</p>
+                                <p className="flex items-start gap-2"><Check size={15} className="mt-0.5 shrink-0 text-[#d8ff3e]" /> Professionally managed infrastructure on your behalf.</p>
+                            </div>
+
+                            <p className="mt-6 text-xs font-black uppercase tracking-widest text-[#f4f7ec]">The trade-offs</p>
+                            <div className="mt-3 space-y-2 text-sm text-[#a9b3a1]">
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> Thinner margins after the operator's fees.</p>
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> You must trust the provider's honesty and uptime — scams are common.</p>
+                                <p className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-[#f0b429]" /> Contracts can lose money if difficulty climbs or BTC price falls.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 flex flex-col items-center gap-5 rounded-2xl border border-white/10 bg-white/5 px-6 py-6 text-center sm:flex-row sm:justify-between sm:text-left">
+                        <p className="max-w-2xl text-sm leading-6 text-[#a9b3a1]">
+                            Traditional mining gives you full ownership with real operational effort. Cloud mining trades that control for convenience and a hands-off experience.
+                        </p>
+                        <button onClick={handleConnect} className="landing-button">Start mining <ArrowRight size={16} /></button>
                     </div>
                 </section>
 
