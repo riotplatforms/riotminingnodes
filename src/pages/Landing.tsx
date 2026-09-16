@@ -1,18 +1,7 @@
 import React from 'react';
-import { ArrowRight, Bitcoin, Check, CircleDollarSign, LockKeyhole, Menu, ShieldCheck, Sparkles, TrendingUp, WalletCards, X } from 'lucide-react';
+import { ArrowRight, Award, Bitcoin, Check, CircleDollarSign, Cpu, Gauge, LockKeyhole, MapPin, Menu, Network, Server, ShieldCheck, Sparkles, TrendingUp, X, Zap } from 'lucide-react';
 import { useWallet } from '../lib/web3';
 import riotLogo from '../assets/riot-removebg.png';
-
-const PLANS: { name: string; price: string; hash: string; apy: string }[] = [
-    { name: 'Starter Cluster', price: '100', hash: '+250 GH/s', apy: '5.0%' },
-    { name: 'Referral Pro Miner', price: '200', hash: '+500 GH/s', apy: '5.0%' },
-    { name: 'Precision Node', price: '400', hash: '+1,000 GH/s', apy: '5.0%' },
-    { name: 'Standard Cluster', price: '500', hash: '+1,250 GH/s', apy: '5.5%' },
-    { name: 'Pro AI Node', price: '1,000', hash: '+2,500 GH/s', apy: '6.0%' },
-    { name: 'Enterprise Cluster', price: '2,000', hash: '+5,000 GH/s', apy: '7%' },
-    { name: 'Industrial Node', price: '5,000', hash: '+12,500 GH/s', apy: '8%' },
-    { name: 'Apex AI Cluster', price: '10,000', hash: '+25,000 GH/s', apy: '12%' },
-];
 
 const REFERRALS: { levels: string; rate: string; label: string; featured?: boolean }[] = [
     { levels: 'Level 1', rate: '5%', label: 'Direct referral', featured: true },
@@ -40,8 +29,8 @@ const Landing: React.FC = () => {
                 </a>
 
                 <nav className="hidden items-center gap-8 text-sm font-semibold text-[#a9b3a1] md:flex">
-                    <a href="#how-it-works" className="transition-colors hover:text-[#d8ff3e]">How it works</a>
-                    <a href="#plans" className="transition-colors hover:text-[#d8ff3e]">Plans</a>
+                    <a href="#how-it-works" className="transition-colors hover:text-[#d8ff3e]">Bitcoin mining</a>
+                    <a href="#riot-platforms" className="transition-colors hover:text-[#d8ff3e]">Riot Platforms</a>
                     <a href="#referrals" className="transition-colors hover:text-[#d8ff3e]">Referral</a>
                     <a href="#benefits" className="transition-colors hover:text-[#d8ff3e]">Benefits</a>
                     <a href="#security" className="transition-colors hover:text-[#d8ff3e]">Security</a>
@@ -59,8 +48,8 @@ const Landing: React.FC = () => {
 
             {menuOpen && (
                 <nav className="mx-5 flex flex-col gap-4 border-y border-white/10 px-2 py-5 text-sm font-semibold text-[#a9b3a1] md:hidden">
-                    <a href="#how-it-works" onClick={() => setMenuOpen(false)}>How it works</a>
-                    <a href="#plans" onClick={() => setMenuOpen(false)}>Plans</a>
+                    <a href="#how-it-works" onClick={() => setMenuOpen(false)}>Bitcoin mining</a>
+                    <a href="#riot-platforms" onClick={() => setMenuOpen(false)}>Riot Platforms</a>
                     <a href="#referrals" onClick={() => setMenuOpen(false)}>Referral</a>
                     <a href="#benefits" onClick={() => setMenuOpen(false)}>Benefits</a>
                     <a href="#security" onClick={() => setMenuOpen(false)}>Security</a>
@@ -111,43 +100,63 @@ const Landing: React.FC = () => {
 
                 <section id="how-it-works" className="grid gap-10 py-24 lg:grid-cols-[0.8fr_1.2fr]">
                     <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">Your next move</p>
-                        <h2 className="mt-4 max-w-md font-display text-4xl font-black uppercase leading-none sm:text-5xl">Start in three simple steps.</h2>
+                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">How Bitcoin mining works</p>
+                        <h2 className="mt-4 max-w-md font-display text-4xl font-black uppercase leading-none sm:text-5xl">Mining, explained simply.</h2>
+                        <p className="mt-5 max-w-md text-base leading-7 text-[#a9b3a1]">
+                            Bitcoin mining is the engine that keeps the Bitcoin network running. Miners use powerful computers to solve cryptographic puzzles that validate transactions and secure the network — and they are rewarded in BTC for every block they add.
+                        </p>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                        <div className="landing-step"><span>01</span><WalletCards size={23} /><strong>Connect</strong><p>Link your preferred wallet securely.</p></div>
-                        <div className="landing-step"><span>02</span><TrendingUp size={23} /><strong>Upgrade</strong><p>Choose a plan for your mining power.</p></div>
-                        <div className="landing-step"><span>03</span><CircleDollarSign size={23} /><strong>Track</strong><p>Follow progress from your dashboard.</p></div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="landing-step"><span>01</span><Network size={23} /><strong>Validate</strong><p>Miners bundle pending transactions into a new block and confirm they are legitimate.</p></div>
+                        <div className="landing-step"><span>02</span><Cpu size={23} /><strong>Hash</strong><p>Specialized ASIC machines race to solve a SHA-256 puzzle — proof of work — for the right to add the block.</p></div>
+                        <div className="landing-step"><span>03</span><Bitcoin size={23} /><strong>Earn BTC</strong><p>The winning miner earns the block reward plus transaction fees, paid directly in Bitcoin.</p></div>
+                        <div className="landing-step"><span>04</span><Zap size={23} /><strong>Scale on power</strong><p>Profitability comes from cheap energy and efficient hardware — Riot self-mines 44.4 EH/s on low-cost power.</p></div>
                     </div>
                 </section>
 
-                <section id="plans" className="py-24">
+                <section id="riot-platforms" className="border-t border-white/10 py-24">
                     <div className="text-center">
-                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">Mining plans</p>
-                        <h2 className="mt-4 font-display text-4xl font-black uppercase leading-none sm:text-5xl">Choose your mining node.</h2>
-                        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#a9b3a1]">Stake USDT to activate a mining node. Every plan runs a 37-day cycle with daily BTC rewards credited straight to your dashboard.</p>
+                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">The team behind the power</p>
+                        <h2 className="mt-4 font-display text-4xl font-black uppercase leading-none sm:text-5xl">Built on Riot Platforms.</h2>
+                        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#a9b3a1]">
+                            Riot Platforms (NASDAQ: RIOT) is one of the largest publicly traded Bitcoin mining and digital infrastructure companies in North America — vertically integrated, energy-optimized, and built on its own power infrastructure.
+                        </p>
                     </div>
 
-                    <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {PLANS.map((p) => (
-                            <div key={p.name} className="landing-plan">
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className="landing-plan-badge"><TrendingUp size={14} /> {p.hash}</span>
-                                    <span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">{p.apy}</span>
-                                </div>
-                                <strong>{p.name}</strong>
-                                <p className="landing-plan-price"><span>$</span>{p.price}<em>USDT</em></p>
+                    <div className="mt-12 grid gap-4 md:grid-cols-3">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <div className="flex items-center gap-3"><Server size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Data centers</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">Built for high-performance computing</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">Large-scale data centers with direct access to low-cost power for AI and high-density workloads.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 2.0 GW approved power pipeline</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 1,300+ acres controlled</p>
                             </div>
-                        ))}
+                        </div>
+                        <div className="rounded-2xl border border-[#d8ff3e]/25 bg-[#d8ff3e]/5 p-6">
+                            <div className="flex items-center gap-3"><Gauge size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Bitcoin mining</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">Large-scale self mining</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">One of the most advanced mining fleets in the industry, operating across Texas and Kentucky.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 44.4 EH/s hash rate capacity</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 100% self mining</p>
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <div className="flex items-center gap-3"><Award size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Engineering</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">In-house engineering</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">ESS Metron and E4A Solutions bring electrical manufacturing and power deployment in-house.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 38+ years of experience</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> In-house design &amp; manufacturing</p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="mt-8 flex flex-col items-center gap-5 rounded-2xl border border-white/10 bg-white/5 px-6 py-6 text-center sm:flex-row sm:justify-between sm:text-left">
-                        <div className="flex flex-wrap justify-center gap-x-7 gap-y-2 text-sm font-semibold text-[#a9b3a1] sm:justify-start">
-                            <span className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> 37-day cycle</span>
-                            <span className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Daily BTC rewards</span>
-                            <span className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Non-custodial</span>
-                        </div>
-                        <button onClick={handleConnect} className="landing-button">Start mining <ArrowRight size={16} /></button>
+                    <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MapPin size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">Corsicana</strong><p className="text-sm text-[#879487]">Corsicana, Texas</p></div></div>
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MapPin size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">Rockdale</strong><p className="text-sm text-[#879487]">Rockdale, Texas</p></div></div>
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MapPin size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">Paducah</strong><p className="text-sm text-[#879487]">Paducah, Kentucky</p></div></div>
                     </div>
                 </section>
 
