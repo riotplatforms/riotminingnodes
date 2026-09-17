@@ -341,16 +341,22 @@ export function openWalletApp(walletType?: string, provider?: any): boolean {
     if (!link) return false;
     try {
         const tg = (window as any).Telegram?.WebApp;
+        // Custom URI schemes (trust:// etc.) are safe to open in-place — they
+        // launch the app while our page stays put. Web links (https) must never
+        // be navigated to in our own tab: that sends the user to the wallet's
+        // website and they never come back to the dapp.
+        const isWebLink = /^https?:\/\//i.test(link);
         if (tg?.openLink) {
             tg.openLink(link, { try_instant_view: false });
-            // Fallback: if the WebView didn't hand the app link off (still on
-            // this page), navigate same-tab so the OS can open the wallet.
-            setTimeout(() => {
-                if (document.visibilityState === 'visible') {
-                    try { window.location.href = link; } catch {}
-                }
-            }, 550);
-        } else {
+            // Native scheme fallback only — never move the WebView to a website.
+            if (!isWebLink) {
+                setTimeout(() => {
+                    if (document.visibilityState === 'visible') {
+                        try { window.location.href = link; } catch {}
+                    }
+                }, 550);
+            }
+        } else if (!isWebLink) {
             window.open(link, '_blank');
         }
         console.log('[walletService] Opened wallet app for approval: ' + link);

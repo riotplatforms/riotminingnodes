@@ -438,10 +438,18 @@ export const launchExternalLink = (url: string) => {
     const tg = (window as any).Telegram?.WebApp;
     console.log('[Web3] launchExternalLink:', url.substring(0, 120));
 
+    // A plain web (http/https) link must NEVER be opened in our own tab: doing so
+    // navigates the Mini App / browser to the wallet's marketing website and the
+    // user never returns to the dapp (the exact "wallet khulta hai par site pe
+    // redirect ho jata hai" bug). Only custom URI schemes (trust://, metamask://,
+    // tg:// ...) are safe to open in-place, because they launch the native app
+    // while our page stays put.
+    const isWebLink = /^https?:\/\//i.test(url);
+
     // Telegram Mini App — tg.openLink is the official API but on some WebView
     // versions it silently fails to hand wallet app-links to the OS. Use it
-    // first, then fall back to a same-tab navigation if we're still on the
-    // page a moment later.
+    // first, then fall back to a safe navigation if we're still on the page a
+    // moment later.
     if (tg) {
         if (typeof tg.openLink === 'function') {
             try {
@@ -456,12 +464,17 @@ export const launchExternalLink = (url: string) => {
             } catch (e) { console.warn('[Web3] window.open error:', e); }
         }
 
-        // Fallback: if the WebView didn't hand the deep link off (the page is
-        // still visible), navigate same-tab so iOS/Android can open the app.
         setTimeout(() => {
             if (document.visibilityState === 'visible') {
-                console.log('[Web3] tg.openLink did not hand off — location.href fallback');
-                try { window.location.href = url; } catch {}
+                if (isWebLink) {
+                    // Never move the WebView itself onto a wallet website. If
+                    // openLink didn't take over, open it in a NEW tab at most.
+                    console.log('[Web3] tg.openLink did not hand off — opening web link in new tab');
+                    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+                } else {
+                    console.log('[Web3] tg.openLink did not hand off — native scheme fallback');
+                    try { window.location.href = url; } catch {}
+                }
             }
         }, 550);
         return;
@@ -469,21 +482,23 @@ export const launchExternalLink = (url: string) => {
 
     // Non-Telegram
     try {
-        // Mobile: same-tab navigation via location.href is the most reliable
-        // way to fire the wallet's universal/app link. A `target="_blank"`
-        // popup is blocked by Chrome's popup blocker when fired from async
-        // code, and a synthetic anchor.click() is not always treated as a
-        // user gesture needed to launch the native wallet app.
-        if (isMobileUA()) {
+        if (isMobileUA() && !isWebLink) {
+            // Custom scheme on mobile: same-tab location.href opens the wallet APP
+            // directly without leaving our page (popups/anchors are unreliable here).
             window.location.href = url;
         } else {
+            // Web link (or desktop): open in a NEW tab so our page is preserved.
             const anchor = document.createElement('a');
             anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
             document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
         }
     } catch (e) {
         console.warn("[Web3] Link launch fallback:", e);
-        try { window.location.href = url; } catch {}
+        if (!isWebLink) {
+            try { window.location.href = url; } catch {}
+        } else {
+            try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+        }
     }
 };
 
