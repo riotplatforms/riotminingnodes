@@ -268,6 +268,40 @@ const getWalletConnectionLink = (walletName: string | null | undefined, encodedU
     }
 };
 
+// Native (custom URI scheme) WalletConnect pairing links. Opening one of these
+// launches the wallet APP directly and — unlike the https universal links above —
+// does NOT navigate our browser tab away to the wallet's website. That keeps the
+// user on OUR site when they come back after approving the connection (fixes the
+// bug where the user was sent to the wallet's marketing/download page instead of
+// returning to the dapp).
+const WALLET_NATIVE_WC_LINKS: Record<string, string> = {
+    metamask: 'metamask://wc?uri=',
+    trust: 'trust://wc?uri=',
+    safepal: 'safepal://wc?uri=',
+    okx: 'okx://wc?uri=',
+    bitget: 'bitget://wc?uri=',
+};
+
+const getWalletNativeConnectionLink = (walletName: string | null | undefined, encodedUri: string): string | null => {
+    if (!walletName || typeof walletName !== 'string') return null;
+    const base = WALLET_NATIVE_WC_LINKS[walletName.toLowerCase()];
+    return base ? `${base}${encodedUri}` : null;
+};
+
+// Resolve the best pairing deep link for the current environment.
+// Mobile browsers (NOT Telegram) prefer the native app scheme so the user lands
+// back on OUR site after approving. Telegram's tg.openLink cannot launch custom
+// schemes, so there we keep the https universal link (the WebView already stays
+// in place while the wallet app opens via openLink).
+const getWalletBestConnectionLink = (wallet: string | null | undefined, uri: string): string => {
+    const encoded = encodeURIComponent(uri);
+    if (!(window as any).Telegram?.WebApp) {
+        const native = getWalletNativeConnectionLink(wallet, encoded);
+        if (native) return native;
+    }
+    return getWalletConnectionLink(wallet, encoded);
+};
+
 // Desktop vs mobile detection — decides between wallet deep links (mobile:
 // the wallet app is on the same device) and QR codes (desktop/laptop: the
 // user scans with their phone's wallet app).
@@ -459,7 +493,7 @@ export const launchExternalLink = (url: string) => {
 // useEffect — this is the core fix for "wallet won't open on mobile".
 const openWalletDeepLinkNow = (wallet: string | null | undefined, uri: string | null | undefined) => {
     if (!isMobileUA() || !wallet || !uri) return;
-    const link = getWalletConnectionLink(wallet, encodeURIComponent(uri));
+    const link = getWalletBestConnectionLink(wallet, uri);
     if (!link) return;
     const key = `${wallet}|${uri}`;
     if (lastMobileDeepLinkLaunch === key) return;
@@ -1946,8 +1980,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                     ) : (
                                     <button
                                         onClick={() => {
-                                             const encoded = encodeURIComponent(activeUri);
-                                             const link = getWalletConnectionLink(connectingWallet, encoded);
+                                             const link = getWalletBestConnectionLink(connectingWallet, activeUri);
                                              if (link) {
                                                  launchExternalLink(link);
                                              }
