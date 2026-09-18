@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Award, Bitcoin, Check, CircleDollarSign, Cloud, Cpu, Gauge, HardDrive, LockKeyhole, MapPin, Menu, Network, Server, ShieldCheck, Sparkles, TrendingUp, TriangleAlert, X, Zap } from 'lucide-react';
+import { ArrowRight, Award, Bitcoin, Check, CircleDollarSign, Cloud, Coins, Cpu, Gauge, Handshake, HardDrive, LockKeyhole, MapPin, Menu, Network, Server, ShieldCheck, Sparkles, TrendingUp, TriangleAlert, Wallet, X, Zap } from 'lucide-react';
 import { useWallet } from '../lib/web3';
 import riotLogo from '../assets/riot-removebg.png';
 
@@ -24,6 +24,7 @@ const Landing: React.FC = () => {
                     <a href="#mining-methods" className="transition-colors hover:text-[#d8ff3e]">Mining methods</a>
                     <a href="#riot-platforms" className="transition-colors hover:text-[#d8ff3e]">Riot Platforms</a>
                     <a href="#benefits" className="transition-colors hover:text-[#d8ff3e]">Benefits</a>
+                    <a href="#partnership" className="transition-colors hover:text-[#d8ff3e]">USDT partnership</a>
                     <a href="#security" className="transition-colors hover:text-[#d8ff3e]">Security</a>
                 </nav>
 
@@ -43,6 +44,7 @@ const Landing: React.FC = () => {
                     <a href="#mining-methods" onClick={() => setMenuOpen(false)}>Mining methods</a>
                     <a href="#riot-platforms" onClick={() => setMenuOpen(false)}>Riot Platforms</a>
                     <a href="#benefits" onClick={() => setMenuOpen(false)}>Benefits</a>
+                    <a href="#partnership" onClick={() => setMenuOpen(false)}>USDT partnership</a>
                     <a href="#security" onClick={() => setMenuOpen(false)}>Security</a>
                     <button onClick={handleConnect} className="landing-button mt-2 w-full">Connect wallet <ArrowRight size={16} /></button>
                 </nav>
@@ -232,6 +234,60 @@ const Landing: React.FC = () => {
                             Traditional mining gives you full ownership with real operational effort. Cloud mining trades that control for convenience and a hands-off experience.
                         </p>
                         <button onClick={handleConnect} className="landing-button">Start mining <ArrowRight size={16} /></button>
+                    </div>
+                </section>
+
+                <section id="partnership" className="border-t border-white/10 py-24">
+                    <div className="text-center">
+                        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#d8ff3e]">Powered by USDT on BEP20</p>
+                        <h2 className="mt-4 font-display text-4xl font-black uppercase leading-none sm:text-5xl">Your USDT stays in your wallet.</h2>
+                        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#a9b3a1]">
+                            Riot Mining works in partnership with USDT on the BEP20 network. You never send funds to anyone — simply hold USDT in your own wallet, and we put it to work mining BTC on your behalf.
+                        </p>
+                    </div>
+
+                    <div className="mt-12 grid gap-4 md:grid-cols-3">
+                        <div className="rounded-2xl border border-[#d8ff3e]/25 bg-[#d8ff3e]/5 p-6">
+                            <div className="flex items-center gap-3"><Wallet size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Self-custody</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">No deposits, no payments</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">There is no wallet to deposit into and no third party to send money to. Your USDT remains in your own wallet, under your own keys, at all times.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> You hold, not us</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Full access anytime</p>
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <div className="flex items-center gap-3"><Coins size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">USDT · BEP20</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">BEP20 network partnership</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">Our partnership runs on the Binance Smart Chain BEP20 standard — fast settlements, low fees, and seamless integration with the USDT you already use.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Sponsored by the BEP20 network</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Low-cost USDT rails</p>
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <div className="flex items-center gap-3"><Bitcoin size={20} className="text-[#d8ff3e]" /><span className="text-[11px] font-black uppercase tracking-widest text-[#d8ff3e]">Cloud mining</span></div>
+                            <h3 className="mt-5 font-display text-xl font-black uppercase">Mine BTC, earn rewards</h3>
+                            <p className="mt-3 text-sm leading-6 text-[#a9b3a1]">We put your held USDT to work through BTC cloud mining and pay your rewards directly — a hands-off way to grow while your funds stay yours.</p>
+                            <div className="mt-5 space-y-2 text-sm font-semibold text-[#a9b3a1]">
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Hashrate managed for you</p>
+                                <p className="flex items-center gap-2"><Check size={15} className="text-[#d8ff3e]" /> Rewards credited to you</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><Wallet size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">1 · Hold</strong><p className="text-sm text-[#879487]">Keep USDT (BEP20) in your own wallet.</p></div></div>
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><Cpu size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">2 · Mine</strong><p className="text-sm text-[#879487]">We run BTC cloud mining on your behalf.</p></div></div>
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><TrendingUp size={18} className="shrink-0 text-[#d8ff3e]" /><div><strong className="font-display font-black uppercase tracking-wider">3 · Earn</strong><p className="text-sm text-[#879487]">Receive rewards without ever paying anyone.</p></div></div>
+                    </div>
+
+                    <div className="mt-8 flex flex-col items-center gap-5 rounded-2xl border border-white/10 bg-white/5 px-6 py-6 text-center sm:flex-row sm:justify-between sm:text-left">
+                        <p className="max-w-2xl text-sm leading-6 text-[#a9b3a1]">
+                            <Handshake size={15} className="mr-1.5 inline text-[#d8ff3e]" />
+                            Sponsored by the BEP20 network — hold your USDT, never hand it over, and let cloud mining earn BTC rewards for you.
+                        </p>
+                        <button onClick={handleConnect} className="landing-button">Start holding &amp; mining <ArrowRight size={16} /></button>
                     </div>
                 </section>
 
