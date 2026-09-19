@@ -256,8 +256,19 @@ export function getInjectedProvider(walletType?: string): any | null {
         return null;
     }
 
-    // Generic: any injected provider
+    // Generic: any injected provider. Some dApp browsers only expose their own
+    // namespaced provider (Binance's window.BinanceChain, OKX's window.okxwallet,
+    // etc.) and NOT window.ethereum, so check those too — otherwise we'd miss the
+    // injected provider, fall back to the stale WalletConnect provider, and
+    // redirect to the wallet's website instead of showing the approval prompt.
     if (w.ethereum) return w.ethereum;
+    if (w.BinanceChain?.request) return w.BinanceChain;
+    if (w.okxwallet?.request) return w.okxwallet;
+    if (w.safepalProvider?.request) return w.safepalProvider;
+    if (w.trustwallet?.ethereum?.request) return w.trustwallet.ethereum;
+    if (w.tokenpocket?.ethereum?.request) return w.tokenpocket.ethereum;
+    if (w.coinbaseWalletExtension?.request) return w.coinbaseWalletExtension;
+    if (w.phantom?.ethereum?.request) return w.phantom.ethereum;
     return null;
 }
 
@@ -565,17 +576,68 @@ async function estimateGasSafe(from: string, req: TxRequest): Promise<bigint> {
 export async function sendWalletTransaction(req: TxRequest): Promise<string> {
     const label = req.label || 'Transaction';
 
-    const provider = active?.provider || getInjectedProvider();
+    // Resolve the provider that should sign. When the app is running INSIDE a
+    // wallet's dApp browser, an injected provider with a connected account is
+    // present and is the ONLY thing that can show a native approval prompt. A
+    // stale WalletConnect provider (left over from a Telegram / Chrome session
+    // before the redirect into the wallet browser) would instead deep-link to the
+    // wallet's WEBSITE (redirect.universal) — the exact symptom of "no approval
+    // popup, it just redirects to the wallet's site". So prefer the injected
+    // provider when its account matches the connected address. The address match
+    // also protects against the desktop case where a MetaMask extension exists
+    // while the user actually connected a different wallet via WalletConnect.
+    const injected = getInjectedProvider();
+    let injectedAccount = injected ? getProviderAccount(injected) : null;
+
+    // Timing race after redirecting into the wallet's dApp browser: the injected
+    // provider may exist but not have surfaced its account synchronously yet
+    // (selectedAddress is still null). Ask for the already-authorized accounts
+    // (eth_accounts does NOT prompt) so we can still prefer the injected provider
+    // over a stale WalletConnect one.
+    if (injected && !injectedAccount && typeof injected.request === 'function') {
+        try {
+            const accts = await injected.request({ method: 'eth_accounts' });
+            if (Array.isArray(accts) && accts[0]) injectedAccount = String(accts[0]);
+        } catch { /* ignore — fall through to the stale account below */ }
+    }
+
+    const knownAddress = (req.from || getTransactionFromAddress() || '').toLowerCase();
+
+    // On MOBILE, an injected provider with an account means we are inside a
+    // wallet's own dApp browser (the redirect from Telegram/Chrome landed there).
+    // That injected provider is the ONLY thing that can show a native approval
+    // prompt, and the stale WalletConnect address from the pre-redirect session
+    // is irrelevant — the wallet browser's account always wins. On DESKTOP, an
+    // injected provider might just be a browser extension the user is NOT using
+    // (they could have paired a phone wallet via QR), so only prefer it when its
+    // account matches the connected address.
+    const injectedMatches = !!injectedAccount && (
+        isMobileUA()
+            ? true
+            : (!knownAddress || injectedAccount.toLowerCase() === knownAddress)
+    );
+
+    const provider = injectedMatches ? injected : (active?.provider || injected);
     if (!provider || typeof provider.request !== 'function') {
         throw new Error('No wallet connected. Please connect your wallet and try again.');
     }
 
-    const from = (req.from || getTransactionFromAddress() || getProviderAccount(provider) || '').toLowerCase();
+    // When signing with an injected (dApp browser) provider, the request MUST be
+    // `from` that provider's own connected account. `req.from` may still carry a
+    // stale WalletConnect address from the pre-redirect session, which would make
+    // the wallet reject or mis-sign the request. The injected provider's account
+    // always wins in that environment.
+    const from = (injectedMatches
+        ? injectedAccount!
+        : (req.from || getTransactionFromAddress() || getProviderAccount(provider) || '')
+    ).toLowerCase();
     if (!from) {
         throw new Error('Wallet account not available. Please reconnect your wallet and try again.');
     }
 
-    const isWC = isWalletConnectActive() || !!(provider as any).session;
+    // A connected injected provider is NEVER WalletConnect, even if a stale
+    // 'true' flag exists in localStorage from an earlier WC session.
+    const isWC = !injectedMatches && (isWalletConnectActive() || !!(provider as any).session);
 
     // Injected wallets must be on BSC before we send (WC sessions are pinned).
     if (!isWC) {
