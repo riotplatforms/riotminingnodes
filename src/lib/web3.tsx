@@ -94,15 +94,15 @@ const checkIsWalletConnect = (provider: any): boolean => {
 const getRedirectLinkForProvider = (provider: any): string | null => {
     const session = provider?.session || provider?.provider?.session;
     const meta = session?.peer?.metadata;
-    // Native redirect opens the wallet APP directly, which then shows the
-    // pending WalletConnect approval — the only link that avoids the wallet's
-    // "dApp browser" / download page on mobile Chrome.
-    if (meta?.redirect?.native) return meta.redirect.native;
-    // tg.openLink cannot open custom schemes, so only use the universal (https)
-    // link inside Telegram. In a normal browser it bounces to the wallet's dApp
-    // browser/download page, so return null and let the WC relay deliver the
-    // approval request instead.
-    if (meta?.redirect?.universal && !!(window as any).Telegram?.WebApp) return meta.redirect.universal;
+    // Only a custom URI scheme (trust://, metamask:// ...) opens the wallet APP
+    // and shows the pending approval. The https "universal" link in a session's
+    // redirect metadata is the wallet's WEBSITE (e.g. https://link.trustwallet.com/)
+    // — redirecting to it is exactly the "connect approves, then it redirects to
+    // trustwallet.com" bug. So we only ever return a native scheme here, and
+    // otherwise let the WalletConnect relay deliver the request without any
+    // navigation away from our page.
+    const native = meta?.redirect?.native || '';
+    if (native && !/^https?:/i.test(native)) return native;
     return null;
 };
 const detectWalletFromPeerName = (peerName: string): string | null => {

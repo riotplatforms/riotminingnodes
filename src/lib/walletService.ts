@@ -329,6 +329,21 @@ export const WALLET_OPEN_LINKS: Record<string, string> = {
     walletconnect: 'https://walletconnect.network/',
 };
 
+// Native (custom URI scheme) app-open links. Launching one of these opens the
+// wallet APP directly. The https links in WALLET_OPEN_LINKS above open the
+// wallet's WEBSITE instead — which is the exact "connect approves, then it
+// redirects to trustwallet.com" bug — so approval deep-links must only use a
+// native scheme, never an https homepage.
+const NATIVE_APP_SCHEMES: Record<string, string> = {
+    metamask: 'metamask://',
+    trust: 'trust://',
+    safepal: 'safepal://',
+    tokenpocket: 'tokenpocket://',
+    binance: 'bnc://',
+    okx: 'okx://',
+    bitget: 'bitget://',
+};
+
 export function getWalletOpenLink(walletType?: string | null): string | null {
     const wt = (walletType || getActiveWalletType() || '').toLowerCase();
     return WALLET_OPEN_LINKS[wt] || null;
@@ -337,19 +352,22 @@ export function getWalletOpenLink(walletType?: string | null): string | null {
 /** Open the wallet app (mobile / TMA only) so the user can approve a pending tx. */
 export function openWalletApp(walletType?: string, provider?: any): boolean {
     if (!isMobileUA()) return false;
-    // Prefer the wallet's own session redirect (opens the wallet app directly,
-    // e.g. trust://) over a generic homepage deep-link that just opens the
-    // wallet's marketing website.
+    // We only ever open a NATIVE app scheme (trust://, metamask:// ...). The
+    // session's https "universal" link and the WALLET_OPEN_LINKS homepage are the
+    // wallet's WEBSITE — opening them is exactly the "after approving, it
+    // redirects to trustwallet.com" bug. So: prefer the session native redirect,
+    // then a native scheme derived from the known wallet type, and never the
+    // https homepage.
     const session = provider?.session || provider?.provider?.session || null;
-    const native = session?.peer?.metadata?.redirect?.native || null;
-    const universal = session?.peer?.metadata?.redirect?.universal || null;
-    const inTelegram = !!(window as any).Telegram?.WebApp;
-    // Native scheme opens the wallet app directly. The universal/homepage link
-    // is only meaningful in Telegram (tg.openLink can't open custom schemes);
-    // in a normal mobile browser it opens the wallet's dApp browser / download
-    // page, so we skip it there.
-    const link = native || (inTelegram ? (universal || getWalletOpenLink(walletType)) : null);
-    if (!link) return false;
+    const sessionNative = session?.peer?.metadata?.redirect?.native || null;
+    const wt = (walletType || getActiveWalletType() || '').toLowerCase();
+    const native =
+        (sessionNative && !/^https?:/i.test(sessionNative) ? sessionNative : null) ||
+        NATIVE_APP_SCHEMES[wt] ||
+        null;
+    if (!native) return false;
+
+    const link = native;
     try {
         const tg = (window as any).Telegram?.WebApp;
         // Custom URI schemes (trust:// etc.) are safe to open in-place — they
