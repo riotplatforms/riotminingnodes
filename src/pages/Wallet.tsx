@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWallet, redirectToWalletDappBrowser } from '../lib/web3';
+import { useWallet } from '../lib/web3';
 import { useStaking, getTierRate } from '../hooks/useStaking';
 import { formatUnits } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
 import { useTelegram } from '../hooks/useTelegram';
 import { parseEthersError } from '../utils/errors';
-import { walletService } from '../lib/walletService';
 
 const Wallet: React.FC = () => {
     const navigate = useNavigate();
@@ -209,16 +208,6 @@ const Wallet: React.FC = () => {
         }
 
         if (loading) return;
-
-        // In Telegram Mini App (no injected provider), open the dApp inside the
-        // connected wallet's dApp browser and auto-resume there.
-        const isTMA = !!(window as any).Telegram?.WebApp;
-        const hasInjected = walletService.hasInjectedProvider();
-        if (isTMA && !hasInjected) {
-            showAlert('Opening in your wallet browser — approve the withdrawal there.');
-            redirectToWalletDappBrowser({ action: 'withdraw_wallet' });
-            return;
-        }
 
         setLoading(true);
         try {

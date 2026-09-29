@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWallet, runWithTimeout, redirectToWalletDappBrowser } from '../lib/web3';
+import { useWallet, runWithTimeout } from '../lib/web3';
 
 import { useStaking, getTierRate } from '../hooks/useStaking';
 import { useTelegram } from '../hooks/useTelegram';
 import { BrowserProvider, JsonRpcSigner, formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
 import { parseEthersError } from '../utils/errors';
-import { walletService } from '../lib/walletService';
 
 const Stake: React.FC = () => {
     const navigate = useNavigate();
@@ -452,18 +451,7 @@ const Stake: React.FC = () => {
 
         if (loading) return;
 
-        // In Telegram Mini App (no injected provider) a WalletConnect tx often
-        // never reaches the wallet (dead relay). Open the dApp inside the
-        // connected wallet's dApp browser and auto-resume there.
-        const isTMA = !!(window as any).Telegram?.WebApp;
-        const hasInjected = walletService.hasInjectedProvider();
-        if (isTMA && !hasInjected) {
-            const cleaned = (typeof priceStr === 'string') ? priceStr.replace(/[^0-9.]/g, '') : String(priceStr || '0').replace(/[^0-9.]/g, '');
-            showAlert('Opening in your wallet browser — approve the transaction there.');
-            redirectToWalletDappBrowser({ action: 'stake', pkg: String(id), amt: cleaned });
-            return;
-        }
-
+        // Stake directly via the connected wallet (no dApp-browser redirect).
         setLoading(id);
 
         // Safety timeout: clear loading after 90 seconds (approve + stake shouldn't take longer)
@@ -682,13 +670,6 @@ const Stake: React.FC = () => {
         const fallbackAddress = await getActiveWalletAddress();
         if (!fallbackAddress) {
             connect(); // Opens WalletConnect modal
-            return;
-        }
-        const isTMA = !!(window as any).Telegram?.WebApp;
-        const hasInjected = walletService.hasInjectedProvider();
-        if (isTMA && !hasInjected) {
-            showAlert('Opening in your wallet browser — approve the withdrawal there.');
-            redirectToWalletDappBrowser({ action: 'withdraw', idx: String(index) });
             return;
         }
         setLoading(`withdraw-${index}`);
