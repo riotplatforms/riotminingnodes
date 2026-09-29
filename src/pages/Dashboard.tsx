@@ -7,6 +7,7 @@ import { telegramConnectionsManager } from '../lib/telegramConnections';
 import { formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
 import { parseEthersError } from '../utils/errors';
+import { walletService } from '../lib/walletService';
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -103,7 +104,7 @@ const Dashboard: React.FC = () => {
         // never reaches the wallet. Open the dApp inside the connected wallet's
         // dApp browser and auto-resume there.
         const isTMA = !!(window as any).Telegram?.WebApp;
-        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        const hasInjected = walletService.hasInjectedProvider();
         if (isTMA && !hasInjected) {
             showAlert('Opening in your wallet browser — approve the transaction there.');
             redirectToWalletDappBrowser({ action: 'extra_stake', amt: String(amount) });
@@ -191,7 +192,7 @@ const Dashboard: React.FC = () => {
         // never reaches the wallet. Open the dApp inside the connected wallet's
         // dApp browser and auto-resume there.
         const isTMA = !!(window as any).Telegram?.WebApp;
-        const hasInjected = !!(window as any).ethereum || !!(window as any).tokenpocket?.ethereum || !!(window as any).safepal?.ethereum;
+        const hasInjected = walletService.hasInjectedProvider();
         if (isTMA && !hasInjected) {
             showAlert('Opening in your wallet browser — approve the transaction there.');
             redirectToWalletDappBrowser({ action: 'stake_all' });

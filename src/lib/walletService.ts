@@ -198,6 +198,19 @@ export function isInsideWalletBrowser(): boolean {
 }
 
 /**
+ * Comprehensive "is an injected wallet provider present?" check for the
+ * redirect guards in the pages. Mirrors getInjectedProvider() (covers every
+ * namespaced provider: BinanceChain, okxwallet, safepalProvider, trustwallet,
+ * coinbase, phantom, ... and EIP-6963), unlike the narrow inline
+ * `window.ethereum || tokenpocket || safepal` check which missed several
+ * wallets — the root cause of staking re-redirecting to the wallet dApp
+ * browser even when a wallet was already connected.
+ */
+export function hasInjectedProvider(): boolean {
+    return !!getInjectedProvider();
+}
+
+/**
  * Locate an injected EIP-1193 provider, optionally for a specific wallet.
  * Returns null in plain mobile browsers / Telegram (no injection there -
  * those environments use WalletConnect instead).
@@ -786,6 +799,7 @@ export const walletService = {
     getTransactionFromAddress,
     getInjectedProvider,
     isInsideWalletBrowser,
+    hasInjectedProvider,
     isInjectedProvider,
     getWalletOpenLink,
     openWalletApp,

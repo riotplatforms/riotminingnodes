@@ -563,6 +563,15 @@ export const getConnectedWalletType = (): string => {
 // Optional query params let the dApp auto-resume the user's action (stake /
 // withdraw) after the wallet injects its provider and auto-connects.
 export const redirectToWalletDappBrowser = (actionParams?: Record<string, string>): void => {
+    // LOOP GUARD: never redirect when a wallet-injected provider is already
+    // present (i.e. we are already running inside the wallet's own dApp
+    // browser). The injected provider can sign the transaction directly;
+    // redirecting here would bounce the user back into the same dApp browser
+    // forever (the "keeps redirecting to dapp browser" bug).
+    if (walletService.isInsideWalletBrowser()) {
+        console.warn('[Web3] redirectToWalletDappBrowser skipped — already inside a wallet browser; signing directly');
+        return;
+    }
     const url = new URL(window.location.href);
     ['action', 'pkg', 'amt', 'idx'].forEach((k) => url.searchParams.delete(k));
     // Preserve the referral — Telegram's start_param lives in init data, not the
