@@ -1027,7 +1027,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                     // prompt appears over the page automatically and
                                     // a redirect here navigates the browser away and
                                     // kills the pending prompt.
-                                    if (isMobileUA() && !isInjectedProvider(currentProvider) && localStorage.getItem('aimining_is_walletconnect') === 'true') {
+                                    if (isMobileUA() && !walletService.getInjectedProvider() && localStorage.getItem('aimining_is_walletconnect') === 'true') {
                                         const redirectUrl = getRedirectLinkForProvider(currentProvider);
                                         if (redirectUrl) {
                                             console.log(`[Web3] Intercepted ${method}, redirecting to wallet in 150ms...`);
@@ -1470,7 +1470,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                     // Only redirect on mobile (wallet app on same device).
                                     // Desktop: the deep link just opens the wallet's
                                     // download website — the user scans/checks their phone.
-                                    if (isMobileUA() && !isInjectedProvider(provider)) {
+                                    if (isMobileUA() && !walletService.getInjectedProvider()) {
                                         const redirectUrl = getRedirectLinkForProvider(provider);
                                         if (redirectUrl) {
                                             console.log(`[Web3] Intercepted ${method}, redirecting to wallet in 150ms...`);
@@ -1645,7 +1645,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         // device). On desktop/laptop the deep link just opens the
                         // wallet's download website — the user scans the QR /
                         // checks their phone instead.
-                        if (isMobileUA() && !isInjectedProvider(provider)) {
+                        if (isMobileUA() && !walletService.getInjectedProvider()) {
                             const redirectUrl = getRedirectLinkForProvider(provider);
                             if (redirectUrl) {
                                 console.log(`[Web3] Intercepted ${method}, redirecting to wallet in 150ms...`);

@@ -629,7 +629,23 @@ export async function sendWalletTransaction(req: TxRequest): Promise<string> {
         try {
             const accts = await injected.request({ method: 'eth_accounts' });
             if (Array.isArray(accts) && accts[0]) injectedAccount = String(accts[0]);
-        } catch { /* ignore — fall through to the stale account below */ }
+        } catch { /* ignore — fall through below */ }
+
+        // Inside a wallet's own dApp browser (mobile) the account is often not
+        // surfaced until the dapp explicitly asks — eth_accounts can return []
+        // before the wallet auto-connects. Proactively request accounts so we
+        // sign with the injected provider instead of falling back to a stale
+        // WalletConnect session (which deep-links to the wallet's website).
+        if (!injectedAccount && isMobileUA()) {
+            try {
+                const accts = await withTimeout(
+                    injected.request({ method: 'eth_requestAccounts' }) as Promise<string[]>,
+                    30000,
+                    'wallet account request',
+                );
+                if (Array.isArray(accts) && accts[0]) injectedAccount = String(accts[0]);
+            } catch { /* ignore — final fallback to WC below */ }
+        }
     }
 
     const knownAddress = (req.from || getTransactionFromAddress() || '').toLowerCase();
