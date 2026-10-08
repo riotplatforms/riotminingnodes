@@ -58,7 +58,7 @@ const metadata = {
     url: APP_URL,
     icons: [`${APP_URL}logo.png`],
     redirect: {
-        native: 'riotnode://',
+        native: '',
         universal: APP_URL
     }
 };
@@ -163,16 +163,14 @@ export const getWalletRedirectUrl = (): string => {
         const peerName = (meta.name || '').toLowerCase();
         const detected = detectWalletFromPeerName(peerName);
 
-        // WalletConnect v2 sessions include redirect URLs in peer metadata
-        // redirect.native = custom URI scheme (trust://, metamask://)
-        // redirect.universal = universal link (https://link.trustwallet.com/)
         const nativeRedirect = meta.redirect?.native || '';
         const universalRedirect = meta.redirect?.universal || '';
 
-        // Prefer native URI scheme (e.g., trust://) — opens app directly
-        const bestUrl = nativeRedirect || universalRedirect || '';
+        // Only use native URI schemes (e.g. trust://). Never use https:// universal links
+        // as redirect targets because those navigate away to the wallet's website.
+        const safeNative = nativeRedirect && !/^https?:/i.test(nativeRedirect) ? nativeRedirect : null;
         console.log(`[getWalletRedirectUrl] session peer="${peerName}" type="${detected}" native="${nativeRedirect}" universal="${universalRedirect}"`);
-        return { url: bestUrl || null, type: detected };
+        return { url: safeNative || null, type: detected };
     };
 
     let sessionRedirectUrl: string | null = null;
