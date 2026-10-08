@@ -58,7 +58,7 @@ const metadata = {
     url: APP_URL,
     icons: [`${APP_URL}logo.png`],
     redirect: {
-        native: '',
+        native: APP_URL,
         universal: APP_URL
     }
 };
