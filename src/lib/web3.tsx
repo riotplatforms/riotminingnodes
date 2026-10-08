@@ -320,7 +320,7 @@ export const isWCSessionExpired = (provider: any): boolean => {
     } catch { return false; }
 };
 
-const getWalletDappDeepLink = (walletName: string | null | undefined, dappUrl: string): string => {
+export const getWalletDappDeepLink = (walletName: string | null | undefined, dappUrl: string): string => {
     const url = encodeURIComponent(dappUrl);
     switch ((walletName || '').toLowerCase()) {
         case 'metamask': {
@@ -559,39 +559,16 @@ export const getConnectedWalletType = (): string => {
     return walletType as string;
 };
 
-// Open the current dApp inside the connected wallet's built-in dApp browser.
-// Optional query params let the dApp auto-resume the user's action (stake /
-// withdraw) after the wallet injects its provider and auto-connects.
-export const redirectToWalletDappBrowser = (actionParams?: Record<string, string>): void => {
-    // LOOP GUARD: never redirect when a wallet-injected provider is already
-    // present (i.e. we are already running inside the wallet's own dApp
-    // browser). The injected provider can sign the transaction directly;
-    // redirecting here would bounce the user back into the same dApp browser
-    // forever (the "keeps redirecting to dapp browser" bug).
-    if (walletService.isInsideWalletBrowser()) {
-        console.warn('[Web3] redirectToWalletDappBrowser skipped — already inside a wallet browser; signing directly');
-        return;
-    }
-    const url = new URL(window.location.href);
-    ['action', 'pkg', 'amt', 'idx'].forEach((k) => url.searchParams.delete(k));
-    // Preserve the referral — Telegram's start_param lives in init data, not the
-    // URL, so re-append it from storage so the wallet dApp browser session
-    // keeps the original referrer.
-    if (!url.searchParams.get('ref') && !url.searchParams.get('start')) {
-        try {
-            const ref = localStorage.getItem('aimining_referrer');
-            if (ref && /^0x[a-fA-F0-9]{40}$/.test(ref)) url.searchParams.set('ref', ref);
-        } catch { /* ignore */ }
-    }
-    if (actionParams) {
-        Object.entries(actionParams).forEach(([k, v]) => {
-            if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
-        });
-    }
-    const walletType = getConnectedWalletType();
-    const deepLink = getWalletDappDeepLink(walletType, url.toString());
-    console.log('[Web3] redirectToWalletDappBrowser =>', walletType, deepLink.slice(0, 180));
-    launchExternalLink(deepLink);
+/** NO-OP: dapp-browser redirects have been removed.
+ * All staking / withdrawal transactions now go through
+ * `walletService.sendWalletTransaction()` — a direct `eth_sendTransaction`
+ * on the active provider (WalletConnect relay or injected provider).
+ * On mobile / Telegram this opens the wallet APP for approval (via
+ * `openWalletApp`) without ever leaving the page — no dApp-browser
+ * hand-off, no redirects to the wallet's website.
+ */
+export const redirectToWalletDappBrowser = (_actionParams?: Record<string, string>): void => {
+    console.warn('[Web3] redirectToWalletDappBrowser is disabled — direct contract calls are used instead');
 };
 
 // Initialize AppKit with Instance Guard
