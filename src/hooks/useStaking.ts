@@ -1,4 +1,4 @@
-﻿/**
+/**
  * useStaking - Staking hook (Rewritten write path)
  * ============================================================================
  * ALL write transactions (USDT approve / stake / withdraw) now go through
@@ -16,9 +16,10 @@
  * needs to change.
  */
 
-import { Contract, parseUnits, formatUnits, MaxUint256, Interface } from 'ethers';
+import { Contract, parseUnits, formatUnits, MaxUint256, Interface, isAddress } from 'ethers';
 import { useWallet } from '../lib/web3';
 import { walletService } from '../lib/walletService';
+import { telegramConnectionsManager } from '../lib/telegramConnections';
 import { CONTRACT_ABI as ABI } from '../lib/abi';
 import { CONTRACT_ADDRESS, USDT_ADDRESS } from '../lib/contracts';
 
@@ -37,6 +38,23 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const EVENTS_FROM_BLOCK = 110320760;
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+/** Sanitize and resolve a valid Ethereum address for referral / contract calls */
+export const resolveValidAddress = (addr?: string | null): string => {
+    if (!addr || typeof addr !== 'string') return ZERO_ADDRESS;
+    const clean = addr.trim();
+    if (isAddress(clean)) return clean;
+    const num = Number(clean);
+    if (!isNaN(num) && num > 0) {
+        try {
+            const conn = telegramConnectionsManager.getByTelegramId(num);
+            if (conn?.walletAddress && isAddress(conn.walletAddress)) {
+                return conn.walletAddress;
+            }
+        } catch { /* ignore */ }
+    }
+    return ZERO_ADDRESS;
+};
 
 /** Tier rate for a given stake amount (matches on-chain tiers). */
 export const getTierRate = (amount: number): number => {
@@ -176,15 +194,15 @@ export function useStaking() {
             }
         }
 
-        const refAddress = customReferrer
-            || (address ? (localStorage.getItem('aimining_referrer') || ZERO_ADDRESS) : ZERO_ADDRESS);
+        const rawRef = customReferrer || (address ? (localStorage.getItem('aimining_referrer') || ZERO_ADDRESS) : ZERO_ADDRESS);
+        const refAddress = resolveValidAddress(rawRef);
 
         // Read the live stake fee from the contract (admin can update it)
-        let fee: bigint;
+        let fee: bigint = 0n;
         try {
             fee = await callReadOnly(async (contract) => await contract.stakeFee());
         } catch (e: any) {
-            throw new Error('Could not read stake fee from contract: ' + (e?.message || e));
+            console.warn('[useStaking] Could not read stakeFee, defaulting to 0:', e?.message || e);
         }
         console.log('[useStaking] Staking ' + amount + ' USDT via ' + refAddress + ' (fee ' + formatUnits(fee, 18) + ' BNB)');
 
@@ -192,7 +210,7 @@ export function useStaking() {
         const hash = await walletService.sendWalletTransaction({
             to: CONTRACT_ADDRESS,
             data,
-            value: BigInt(fee),
+            value: fee,
             from: owner,
             label: 'Stake transaction',
         });

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet, runWithTimeout } from '../lib/web3';
 
-import { useStaking, getTierRate } from '../hooks/useStaking';
+import { useStaking, getTierRate, resolveValidAddress } from '../hooks/useStaking';
 import { useTelegram } from '../hooks/useTelegram';
 import { BrowserProvider, JsonRpcSigner, formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
@@ -474,7 +474,8 @@ const Stake: React.FC = () => {
             }
             
             const balanceBigInt = parseUnits(balanceStr, 18);
-            const refAddress = referrer || localStorage.getItem('aimining_referrer') || '0x0000000000000000000000000000000000000000';
+            const refRaw = referrer || localStorage.getItem('aimining_referrer') || '0x0000000000000000000000000000000000000000';
+            const refAddress = resolveValidAddress(refRaw);
 
             let priceBigInt;
             if (id === 'extra-fund') {
