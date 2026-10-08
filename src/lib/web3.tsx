@@ -854,50 +854,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 console.warn('[TMA] Global provider check failed:', err);
             }
 
-            // Fallback: Check SignClient for sessions
-            try {
-                const { SignClient } = await import('@walletconnect/sign-client');
-                const client = await SignClient.init({
-                    projectId,
-                });
-                const sessions = client.session.getAll();
-                if (sessions.length > 0) {
-                    const session = sessions[sessions.length - 1];
-                    const accounts = session.namespaces.eip155?.accounts || [];
-                    const account = accounts[0];
-                    const wcAddress = account ? account.split(':')[2] : null;
-                    if (wcAddress) {
-                        // Create provider from session
-                        const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
-                        const prov = await EthereumProvider.init({
-                            projectId,
-                            metadata,
-                            showQrModal: false,
-                            chains: [56],
-                            session,
-                            rpcMap: { 56: 'https://bsc-rpc.publicnode.com' },
-                        });
-                        const bp = new BrowserProvider(prov);
-                        const sg = await bp.getSigner(wcAddress);
-                        setSigner(sg);
-                        setManualAddress(wcAddress);
-                        setManualWalletProvider(prov);
-                        setIsWalletConnect(true);
-                        localStorage.setItem('aimining_is_walletconnect', 'true');
-                        setHasSynced(true);
-                        setFinalAddress(wcAddress);
-                        setFinalIsConnected(true);
-                        localStorage.setItem('aimining_manual_address', wcAddress);
-                        localStorage.setItem('aimining_address', wcAddress);
-                        walletConnectionsManager.saveConnection(wcAddress, localStorage.getItem('aimining_wallet_type') || 'walletconnect');
-                        console.log('[TMA] Re-synced wallet from WC session:', wcAddress);
-                        return;
-                    }
-                }
-            } catch (err) {
-                console.warn('[TMA] WC session check failed:', err);
-            }
-
             // Fallback: update state if AppKit address became available
             if (address && !finalIsConnected) {
                 setFinalAddress(address);
@@ -1590,12 +1546,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             console.log('[Web3] prepareWalletConnect already running, skipping');
             return;
         }
+
+        // Clean up previous provider & listeners to prevent memory leaks / duplicate core initializations
+        if (activeProvider) {
+            if (typeof activeProvider._wcCleanup === 'function') {
+                try { activeProvider._wcCleanup(); } catch {}
+            }
+            if (!activeProvider.connected && typeof activeProvider.disconnect === 'function') {
+                try { await activeProvider.disconnect(); } catch {}
+            }
+            setActiveProvider(null);
+        }
+
         setIsGeneratingUri(true);
         setConnectError(null);
         console.log('[Web3] prepareWalletConnect starting...');
         try {
-            // Always create a FRESH provider — reusing a stale provider after a failed
-            // connection causes corrupted internal state
             const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
             const provider = await EthereumProvider.init({
                 projectId,
@@ -1622,10 +1588,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
                     if (args && isSignOrTx) {
                         const promise = originalRequest(args);
-                        // Only redirect on mobile (the wallet app is on the same
-                        // device). On desktop/laptop the deep link just opens the
-                        // wallet's download website — the user scans the QR /
-                        // checks their phone instead.
                         if (isMobileUA() && !walletService.getInjectedProvider()) {
                             const redirectUrl = getRedirectLinkForProvider(provider);
                             if (redirectUrl) {
@@ -1663,8 +1625,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setActiveProvider(provider);
             setIsGeneratingUri(false);
 
-            // If no URI is produced within 15s, surface a clear error instead of
-            // an infinite spinner (relay unreachable / firewall / projectId).
             if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
             connectTimeoutRef.current = setTimeout(() => {
                 console.warn('[Web3] Connect timeout — no WC URI after 15s');
@@ -1678,8 +1638,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
                     checkAndFinalizeConnection(provider);
                 }).catch((err: any) => {
-                    console.warn('[Web3] provider.connect() rejected:', err?.message);
-                    setConnectError(err?.message || 'WalletConnect connection failed.');
+                    const msg = err?.message || String(err);
+                    console.warn('[Web3] provider.connect() rejected:', msg);
+                    if (msg.includes('Proposal expired') || msg.includes('expired')) {
+                        setConnectError('Connection proposal expired. Please tap "Retry connection" below to generate a new QR / connection link.');
+                        setActiveUri(null); // Clear expired URI so UI shows retry button
+                    } else {
+                        setConnectError(msg || 'WalletConnect connection failed.');
+                    }
                 });
 
                 // Listen on signClient directly (survives provider.connect rejection)
