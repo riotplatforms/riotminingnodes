@@ -579,34 +579,38 @@ export const redirectToWalletDappBrowser = (_actionParams?: Record<string, strin
 let appKitInitialized = false;
 
 if (!appKitInitialized) {
-    createAppKit({
-        adapters: [new EthersAdapter()],
-        networks: [bsc],
-        defaultNetwork: bsc,
-        metadata,
-        projectId,
-        allWallets: 'SHOW',
-        featuredWalletIds: [
-            '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0', // Trust Wallet
-            'c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96', // MetaMask
-            '1ae92b26df02f0abca6304df07debccd18262fdf5fe82daa81593582dac9a369', // Rainbow
-            'fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa', // Coinbase
-            '0b415a74b010e646b3a393a1953494349efe26d62a3d7e716e7b45f4b7b4b1d0', // SafePal
-            '8a0ee50d1f22f6651afcae7eb4253e52a3310b90af5daef78a8c4929a9bb60d7', // TokenPocket
-        ],
-        enableMobileFullScreen: true,
-        features: {
-            analytics: true,
-            email: false,
-            socials: false
-        },
-        themeMode: 'dark',
-        themeVariables: {
-            '--w3m-accent': '#FFD700',
-            '--w3m-border-radius-master': '1px'
-        }
-    });
-    appKitInitialized = true;
+    try {
+        createAppKit({
+            adapters: [new EthersAdapter()],
+            networks: [bsc],
+            defaultNetwork: bsc,
+            metadata,
+            projectId,
+            allWallets: 'SHOW',
+            featuredWalletIds: [
+                '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0', // Trust Wallet
+                'c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96', // MetaMask
+                '1ae92b26df02f0abca6304df07debccd18262fdf5fe82daa81593582dac9a369', // Rainbow
+                'fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa', // Coinbase
+                '0b415a74b010e646b3a393a1953494349efe26d62a3d7e716e7b45f4b7b4b1d0', // SafePal
+                '8a0ee50d1f22f6651afcae7eb4253e52a3310b90af5daef78a8c4929a9bb60d7', // TokenPocket
+            ],
+            enableMobileFullScreen: true,
+            features: {
+                analytics: true,
+                email: false,
+                socials: false
+            },
+            themeMode: 'dark',
+            themeVariables: {
+                '--w3m-accent': '#FFD700',
+                '--w3m-border-radius-master': '1px'
+            }
+        });
+        appKitInitialized = true;
+    } catch (e) {
+        console.warn('[Web3] AppKit initialization suppressed in restricted WebView:', e);
+    }
 }
 
 interface WalletContextType {
@@ -878,13 +882,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (finalIsConnected || manualAddress || signer) return;
         if (skipAutoConnectRef.current) return;
 
-        // Don't auto-connect if user just opened normally (not from wallet browser)
-        // Only auto-connect if a wallet-specific provider is detected
         const detectWalletProvider = () => {
             const eth = (window as any).ethereum;
             if (!eth) return null;
 
-            // Check for wallet-specific flags
             if (eth.isMetaMask && !(window as any).trustwallet) return 'metamask';
             if ((window as any).trustwallet?.ethereum || eth.isTrust) return 'trust';
             if ((window as any).safepal?.ethereum || (window as any).safepalProvider || eth.isSafePal) return 'safepal';
@@ -895,29 +896,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             return null;
         };
 
-        let retries = 0;
-        const maxRetries = 12;
         const tryAutoConnect = async () => {
             const detectedWallet = detectWalletProvider();
-            if (!detectedWallet) {
-                if (retries < maxRetries) {
-                    retries++;
-                    setTimeout(tryAutoConnect, 1000);
-                }
-                return;
-            }
+            if (!detectedWallet) return;
 
             console.log('[AutoConnect] Detected wallet provider:', detectedWallet);
-            const status = await connectInjectedWallet(detectedWallet);
-            console.log('[AutoConnect] Result:', status);
-            if (status !== 'connected' && retries < maxRetries) {
-                retries++;
-                setTimeout(tryAutoConnect, 2000);
-            }
+            // Silent check (eth_accounts) — returns connected account if already authorized, zero lag
+            await connectInjectedWallet(detectedWallet, true);
         };
 
-        // Start checking after 1 second (give wallet browser time to inject)
-        setTimeout(tryAutoConnect, 1000);
+        // Give wallet browser time to inject provider (500ms)
+        const timer = setTimeout(tryAutoConnect, 500);
+        return () => clearTimeout(timer);
     }, [finalIsConnected, manualAddress, signer]);
 
     // Sync Signer when connection changes (High-Performance Mode for TMA)
@@ -1155,9 +1145,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setIsConnectModalOpen(true);
     };
 
-    const connectInjectedWallet = async (preferredWallet?: string): Promise<'connected' | 'not_installed' | 'failed'> => {
+    const connectInjectedWallet = async (preferredWallet?: string, silent: boolean = false): Promise<'connected' | 'not_installed' | 'failed'> => {
         // NOTE: Only call this when window.ethereum is already available (checked by caller)
-        // The 7.5s wait loop has been removed since it blocks the UI unnecessarily
         let ethereum = (window as any).ethereum;
         let injectedProvider = null;
 
@@ -1214,12 +1203,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         try {
-            // 1. Request accounts first to establish connection
+            // 1. If silent, use eth_accounts (zero prompt, instant return). Otherwise eth_requestAccounts.
+            const method = silent ? 'eth_accounts' : 'eth_requestAccounts';
             const accounts = await runWithTimeout<string[]>(
-                `${preferredWallet || 'injected'} eth_requestAccounts`,
-                injectedProvider.request({ method: 'eth_requestAccounts' }) as Promise<string[]>
-            );
-            const connectedAddress = accounts?.[0] || injectedProvider.selectedAddress;
+                `${preferredWallet || 'injected'} ${method}`,
+                injectedProvider.request({ method }) as Promise<string[]>,
+                silent ? 2500 : 20000
+            ).catch(() => []);
+
+            const connectedAddress = accounts?.[0] || (silent ? null : injectedProvider.selectedAddress);
             if (!connectedAddress) return 'failed';
 
             // 2. Check current chain ID and switch if necessary
@@ -1372,85 +1364,79 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 }
             }
 
-            try {
-                const provider = await getGlobalEthereumProvider();
+            const isWC = localStorage.getItem('aimining_is_walletconnect') === 'true';
+            if (isWC) {
+                try {
+                    const provider = await getGlobalEthereumProvider();
 
-                if (provider.session) {
-                    // EXPIRED SESSION CHECK — an expired session LOOKS connected
-                    // (session + accounts still in storage) but transactions never
-                    // reach the wallet (no approval popup). Disconnect and require
-                    // a clean reconnect instead of silently restoring it.
-                    if (isWCSessionExpired(provider)) {
-                        console.warn('[Web3] Boot: stored WC session is EXPIRED — disconnecting so the user reconnects cleanly');
-                        try { await provider.disconnect(); } catch {}
-                        localStorage.removeItem('aimining_is_walletconnect');
-                        localStorage.removeItem('aimining_address');
-                        localStorage.removeItem('aimining_manual_address');
-                    } else {
-                    const accounts = provider.accounts;
-                    if (accounts && accounts.length > 0) {
-                        const connectedAddress = accounts[0];
+                    if (provider?.session) {
+                        if (isWCSessionExpired(provider)) {
+                            console.warn('[Web3] Boot: stored WC session is EXPIRED — disconnecting so the user reconnects cleanly');
+                            try { await provider.disconnect(); } catch {}
+                            localStorage.removeItem('aimining_is_walletconnect');
+                            localStorage.removeItem('aimining_address');
+                            localStorage.removeItem('aimining_manual_address');
+                        } else {
+                            const accounts = provider.accounts;
+                            if (accounts && accounts.length > 0) {
+                                const connectedAddress = accounts[0];
 
-                        // Intercept provider request for transaction redirects (fixes background execution freeze)
-                        if (!provider._isIntercepted) {
-                            const originalRequest = provider.request.bind(provider);
-                            (provider as any).request = async (args: any) => {
-                                const method = args?.method;
-                                const isSignOrTx = method === 'eth_sendTransaction' || 
-                                                  method === 'personal_sign' || 
-                                                  method === 'eth_sign' ||
-                                                  method === 'eth_signTypedData' || 
-                                                  method === 'eth_signTypedData_v4';
-                                
-                                if (args && isSignOrTx) {
-                                    const promise = originalRequest(args);
-                                    // Only redirect on mobile (wallet app on same device).
-                                    // Desktop: the deep link just opens the wallet's
-                                    // download website — the user scans/checks their phone.
-                                    if (isMobileUA() && !walletService.getInjectedProvider()) {
-                                        const redirectUrl = getRedirectLinkForProvider(provider);
-                                        if (redirectUrl) {
-                                            console.log(`[Web3] Intercepted ${method}, redirecting to wallet in 150ms...`);
-                                            setTimeout(() => {
-                                                launchExternalLink(redirectUrl);
-                                            }, 150);
-                                        }
+                                try {
+                                    if (!provider._isIntercepted && Object.isExtensible(provider)) {
+                                        const originalRequest = provider.request.bind(provider);
+                                        (provider as any).request = async (args: any) => {
+                                            const method = args?.method;
+                                            const isSignOrTx = method === 'eth_sendTransaction' || 
+                                                              method === 'personal_sign' || 
+                                                              method === 'eth_sign' ||
+                                                              method === 'eth_signTypedData' || 
+                                                              method === 'eth_signTypedData_v4';
+                                            
+                                            if (args && isSignOrTx) {
+                                                const promise = originalRequest(args);
+                                                if (isMobileUA() && !walletService.getInjectedProvider()) {
+                                                    const redirectUrl = getRedirectLinkForProvider(provider);
+                                                    if (redirectUrl) {
+                                                        console.log(`[Web3] Intercepted ${method}, redirecting to wallet in 150ms...`);
+                                                        setTimeout(() => {
+                                                            launchExternalLink(redirectUrl);
+                                                        }, 150);
+                                                    }
+                                                }
+                                                return promise;
+                                            }
+                                            return originalRequest(args);
+                                        };
+                                        provider._isIntercepted = true;
                                     }
-                                    return promise;
-                                }
-                                return originalRequest(args);
-                            };
-                            provider._isIntercepted = true;
-                        }
+                                } catch (e) { console.warn('[Web3] Provider patch skipped:', e); }
 
-                        setManualAddress(connectedAddress);
-                        setManualWalletProvider(provider);
-                        (window as any).__manualWalletProvider = provider; // immediate access for getRawProvider()
-                        setGlobalAppKitProvider(provider); // also set global for cross-module access
-                        setHasSynced(true);
-                        setFinalAddress(connectedAddress);
-                        setFinalIsConnected(true);
-                        localStorage.setItem('aimining_manual_address', connectedAddress);
-                        localStorage.setItem('aimining_address', connectedAddress);
-                        setIsWalletConnect(true);
-                        localStorage.setItem('aimining_is_walletconnect', 'true');
-                        // Persist the wallet type from the restored WC session so
-                        // approval deep-links open the CORRECT wallet (not a
-                        // default like MetaMask) after a page reload.
-                        try {
-                            const peerName = provider.session?.peer?.metadata?.name || '';
-                            const wt = detectWalletFromPeerName(peerName);
-                            if (wt) {
-                                setWalletType(wt);
-                                setActiveWalletType(wt);
+                                setManualAddress(connectedAddress);
+                                setManualWalletProvider(provider);
+                                (window as any).__manualWalletProvider = provider;
+                                setGlobalAppKitProvider(provider);
+                                setHasSynced(true);
+                                setFinalAddress(connectedAddress);
+                                setFinalIsConnected(true);
+                                localStorage.setItem('aimining_manual_address', connectedAddress);
+                                localStorage.setItem('aimining_address', connectedAddress);
+                                setIsWalletConnect(true);
+                                localStorage.setItem('aimining_is_walletconnect', 'true');
+                                try {
+                                    const peerName = provider.session?.peer?.metadata?.name || '';
+                                    const wt = detectWalletFromPeerName(peerName);
+                                    if (wt) {
+                                        setWalletType(wt);
+                                        setActiveWalletType(wt);
+                                    }
+                                } catch { /* ignore */ }
+                                return;
                             }
-                        } catch { /* ignore */ }
-                        return;
+                        }
                     }
-                    }
+                } catch (err) {
+                    console.warn("[Web3] Session Restore failed:", err);
                 }
-            } catch (err) {
-                console.warn("[Web3] Session Restore failed:", err);
             }
 
             // Secondary check for injected providers on boot
