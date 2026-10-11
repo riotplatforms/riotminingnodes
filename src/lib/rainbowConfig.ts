@@ -32,7 +32,7 @@ export const bscChain = defineChain({
 
 export const rainbowConfig = getDefaultConfig({
     appName: 'Riot Mining Platform',
-    projectId: '1ffabe728c84e0c65d820388468f8371', // Same WC project ID
+    projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '1ffabe728c84e0c65d820388468f8371', // Same WC project ID
     chains: [bscChain],
     transports: {
         [56]: http('https://bsc-dataseed.binance.org'),

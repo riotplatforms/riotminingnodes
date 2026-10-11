@@ -15,7 +15,7 @@ import { walletService, isInjectedProvider } from './walletService';
 
 
 // 1. Connection Config (REOWN / WALLETCONNECT)
-const projectId = '1ffabe728c84e0c65d820388468f8371';
+const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '1ffabe728c84e0c65d820388468f8371';
 
 let globalEthereumProvider: any = null;
 let globalEthereumProviderPromise: Promise<any> | null = null;
@@ -50,7 +50,9 @@ export const getGlobalEthereumProvider = async () => {
     return globalEthereumProviderPromise;
 };
 
-export const APP_URL = 'https://riotnode.raftarsingh9909.workers.dev/';
+export const APP_URL = typeof window !== 'undefined' && window.location?.origin
+    ? (window.location.origin.endsWith('/') ? window.location.origin : window.location.origin + '/')
+    : 'https://riotmining.riotplatfroms.workers.dev/';
 
 const metadata = {
     name: 'Riot Mining Platform',
@@ -1613,9 +1615,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
             connectTimeoutRef.current = setTimeout(() => {
-                console.warn('[Web3] Connect timeout — no WC URI after 15s');
-                setConnectError('WalletConnect relay is not responding. Check your internet connection, firewall, or projectId.');
-            }, 15000);
+                console.warn('[Web3] Connect timeout — no WC URI after 30s');
+                setConnectError('WalletConnect relay is taking too long to respond. Check your internet connection or tap Retry.');
+            }, 30000);
 
             try {
                 console.log('[Web3] Calling provider.connect() (fire-and-forget)...');

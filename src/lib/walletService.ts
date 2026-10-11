@@ -331,7 +331,9 @@ export function isInjectedProvider(provider: any): boolean {
 // Wallet deep-links (so the approval sheet is reachable on mobile / TMA)
 // ---------------------------------------------------------------------------
 
-export const APP_URL = 'https://riotnode.raftarsingh9909.workers.dev/';
+export const APP_URL = typeof window !== 'undefined' && window.location?.origin
+    ? (window.location.origin.endsWith('/') ? window.location.origin : window.location.origin + '/')
+    : 'https://riotmining.riotplatfroms.workers.dev/';
 
 export const WALLET_OPEN_LINKS: Record<string, string> = {
     metamask: APP_URL,
