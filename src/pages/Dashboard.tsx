@@ -6,7 +6,7 @@ import { useTelegram } from '../hooks/useTelegram';
 import { telegramConnectionsManager } from '../lib/telegramConnections';
 import { formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
-import { parseEthersError } from '../utils/errors';
+import { parseDetailedError } from '../utils/errors';
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -147,7 +147,8 @@ const Dashboard: React.FC = () => {
             fetchExtraFundData();
         } catch (err: any) {
             console.error('[Dashboard] handleExtraStake error:', err);
-            showAlert(parseEthersError(err));
+            const detailed = parseDetailedError(err, 'stake');
+            showAlert(detailed.reason, detailed.title, detailed.suggestion, detailed.type);
         } finally {
             setExtraFundLoading(false);
         }
@@ -244,7 +245,8 @@ const Dashboard: React.FC = () => {
         } catch (err: any) {
             console.error("[Mining] Error:", err);
             
-            showAlert(parseEthersError(err));
+            const detailed = parseDetailedError(err, 'stake');
+            showAlert(detailed.reason, detailed.title, detailed.suggestion, detailed.type);
         } finally {
             setLoading(false);
         }

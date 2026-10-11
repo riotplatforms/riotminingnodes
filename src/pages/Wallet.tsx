@@ -5,7 +5,7 @@ import { useStaking, getTierRate } from '../hooks/useStaking';
 import { formatUnits } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
 import { useTelegram } from '../hooks/useTelegram';
-import { parseEthersError } from '../utils/errors';
+import { parseDetailedError } from '../utils/errors';
 
 const Wallet: React.FC = () => {
     const navigate = useNavigate();
@@ -213,20 +213,32 @@ const Wallet: React.FC = () => {
         try {
             const info = await getStakedInfo(userAddress);
             if (!info || info.stakeCount === 0) {
-                showAlert('No active mining cycle found.');
+                showAlert(
+                    'Aapka koi active mining cycle ya stake record nahi mila.',
+                    'ℹ️ No Active Mining Cycle',
+                    'Mining start karne ke liye Upgrade/Stake page par jakar node activate karein.',
+                    'info'
+                );
                 return;
             }
 
             // Get current wallet balance for violation check
             const wBalance = await getWalletBalance(userAddress);
             if (wBalance === null) {
-                showAlert('Could not read wallet balance. Try again.');
+                showAlert(
+                    'Network issues ki wajah se wallet balance check nahi ho saka. Kripya dubara try karein.',
+                    '⚠️ Network Issue',
+                    'Internet connection check karein aur dobara withdraw par tap karein.',
+                    'warning'
+                );
                 return;
             }
             const wBalanceNum = parseFloat(wBalance);
 
             let matureStakeIndex: number | null = null;
             let runningStakedSum = 0;
+            let totalActiveStakes = 0;
+            let minDaysRemaining = 37;
 
             for (let i = 0; i < info.stakeCount; i++) {
                 const detail = await getStakeDetails(userAddress, i);
@@ -234,9 +246,12 @@ const Wallet: React.FC = () => {
                     throw new Error("RPC error: Failed to fetch stake details. Please try again.");
                 }
                 if (detail.withdrawn) continue;
+                totalActiveStakes++;
 
                 const stakeAmount = parseFloat(formatUnits(detail.amount, 18));
-                const finished = (Date.now() / 1000) > detail.startTime + (37 * 86400);
+                const maturityTimestamp = detail.startTime + (37 * 86400);
+                const nowSec = Date.now() / 1000;
+                const finished = nowSec >= maturityTimestamp;
                 const wasFlushed = isStakePermanentlyFlushed(userAddress, i);
                 const isBalanceSufficient = finished || (wBalanceNum + 0.1) >= runningStakedSum + stakeAmount;
                 if (isBalanceSufficient && wasFlushed) {
@@ -247,6 +262,8 @@ const Wallet: React.FC = () => {
                 if (!isViolated) {
                     if (!finished) {
                         runningStakedSum += stakeAmount;
+                        const daysLeft = Math.ceil((maturityTimestamp - nowSec) / 86400);
+                        if (daysLeft < minDaysRemaining) minDaysRemaining = daysLeft;
                     } else {
                         // It is mature and not violated
                         matureStakeIndex = i;
@@ -256,16 +273,31 @@ const Wallet: React.FC = () => {
             }
 
             if (matureStakeIndex === null) {
-                showAlert('Withdrawal unlocks after the 37-day staking cycle is completed.');
+                if (totalActiveStakes === 0) {
+                    showAlert(
+                        'Aapke sabhi stakes pehle hi withdraw kiye ja chuke hain.',
+                        '✅ Already Withdrawn',
+                        'Naya profit earn karne ke liye naya node stake karein.',
+                        'info'
+                    );
+                } else {
+                    showAlert(
+                        `37 din ka staking cycle abhi poora nahi hua hai. Lagbhag ${minDaysRemaining} din bache hain.`,
+                        '⏳ Withdrawal Locked (Cycle Incomplete)',
+                        '37 days complete hote hi aapka principal amount + tier profit withdraw ke liye unlock ho jayega.',
+                        'warning'
+                    );
+                }
                 return;
             }
 
             await withdraw(matureStakeIndex);
             await fetchWalletData();
-            showAlert('Success: Withdrawal completed!');
+            showAlert('Withdrawal completed successfully! Funds aapke wallet me transfer ho gaye hain.', '✅ Withdrawal Successful', undefined, 'success');
             navigate('/stake');
         } catch (err: any) {
-            showAlert(parseEthersError(err));
+            const detailed = parseDetailedError(err, 'withdraw');
+            showAlert(detailed.reason, detailed.title, detailed.suggestion, detailed.type);
         } finally {
             setLoading(false);
         }

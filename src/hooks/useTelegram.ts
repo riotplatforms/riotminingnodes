@@ -81,17 +81,34 @@ export function useTelegram() {
     }
   }, [tg]);
 
-  const showAlert = useCallback((message: string) => {
+  const showAlert = useCallback((message: string, title?: string, suggestion?: string, type: 'error' | 'warning' | 'success' | 'info' = 'info') => {
+    // 1. Show rich in-app modal popup (works 100% in all WebViews & browsers)
+    try {
+      const isErr = type === 'error' || message.toLowerCase().includes('fail') || message.toLowerCase().includes('error');
+      const isWarn = type === 'warning' || message.toLowerCase().includes('reject') || message.toLowerCase().includes('cancel') || message.toLowerCase().includes('insufficient');
+      const isSucc = type === 'success' || message.toLowerCase().includes('success');
+      const resolvedType = type !== 'info' ? type : isErr ? 'error' : isWarn ? 'warning' : isSucc ? 'success' : 'info';
+
+      window.dispatchEvent(new CustomEvent('riot_notification', {
+        detail: {
+          title: title || (isErr ? 'Error' : isWarn ? 'Attention' : isSucc ? 'Success' : 'Notification'),
+          reason: message,
+          suggestion,
+          type: resolvedType
+        }
+      }));
+    } catch {}
+
+    // 2. Also trigger Telegram native alert if available
     if (tg) {
       try {
         tg.showAlert(message);
       } catch (e) {
-        // Telegram 6.0: showAlert/showPopup may not be supported
-        console.warn('[Telegram] showAlert failed, falling back to console.log:', message);
-        console.log('[Alert]', message);
+        console.warn('[Telegram] showAlert failed:', e);
       }
-    } else {
-      alert(message);
+    } else if (typeof window !== 'undefined' && !window.location.search.includes('silent=1')) {
+      // Browser fallback
+      console.log('[Alert]', message);
     }
   }, [tg]);
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTelegram } from '../hooks/useTelegram';
+import { NotificationModal } from './NotificationModal';
 
 const Layout: React.FC<{ children: React.ReactNode, hideNav?: boolean, publicView?: boolean }> = ({ children, hideNav, publicView }) => {
     const { tg } = useTelegram();
@@ -65,6 +66,9 @@ const Layout: React.FC<{ children: React.ReactNode, hideNav?: boolean, publicVie
                     ))}
                 </nav>
             )}
+
+            {/* Global In-App Notification Modal for Staking, Withdrawal, and Error Reasons */}
+            <NotificationModal />
         </div>
     );
 };

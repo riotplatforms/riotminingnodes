@@ -6,7 +6,7 @@ import { useStaking, getTierRate, resolveValidAddress } from '../hooks/useStakin
 import { useTelegram } from '../hooks/useTelegram';
 import { BrowserProvider, JsonRpcSigner, formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { usePrice } from '../hooks/usePrice';
-import { parseEthersError } from '../utils/errors';
+import { parseDetailedError } from '../utils/errors';
 
 const Stake: React.FC = () => {
     const navigate = useNavigate();
@@ -512,14 +512,14 @@ const Stake: React.FC = () => {
 
             if (balanceBigInt < priceBigInt) {
                 localStorage.removeItem('pending_upgrade');
-                showAlert(`Insufficient wallet balance. You need at least ${formatUnits(priceBigInt, 18)} USDT.`);
+                showAlert(`Aapke wallet me USDT balance kam hai. Required: ${formatUnits(priceBigInt, 18)} USDT.`, '💰 Insufficient USDT Balance', 'Kripya wallet me USDT deposit karein aur dobara try karein.', 'error');
                 return;
             }
 
             const minStakeBigInt = parseUnits("50", 18);
             if (priceBigInt < minStakeBigInt) {
                 localStorage.removeItem('pending_upgrade');
-                showAlert("Minimum 50 USDT required to activate mining node.");
+                showAlert("Mining node activate karne ke liye kam se kam 50 USDT stake karna zaroori hai.", '⚠️ Minimum 50 USDT Required', 'Kam se kam 50 USDT enter karein.', 'warning');
                 return;
             }
 
@@ -606,18 +606,18 @@ const Stake: React.FC = () => {
 
             localStorage.removeItem('pending_upgrade');
             localStorage.removeItem('pending_stake_refresh');
-            showAlert(`Success: Staked ${formatUnits(priceBigInt, 18)} USDT and upgraded mining node!`);
+            showAlert(`Staked ${formatUnits(priceBigInt, 18)} USDT successfully! Mining node upgraded.`, '✅ Node Upgraded Successfully', undefined, 'success');
             await updateStakes();
         } catch (err: any) {
             console.error('[Stake] handleBuy error:', err?.message || err);
-            const msg = parseEthersError(err);
+            const detailed = parseDetailedError(err, 'stake');
 
             // ALWAYS clear pending_upgrade on error to prevent infinite auto-resume loop
             localStorage.removeItem('pending_upgrade');
             // Store fail msg so auto-resume useEffect knows last attempt failed
-            localStorage.setItem('pending_upgrade_fail_msg', msg || 'Unknown');
+            localStorage.setItem('pending_upgrade_fail_msg', detailed.reason || 'Unknown');
 
-            showAlert(msg);
+            showAlert(detailed.reason, detailed.title, detailed.suggestion, detailed.type);
         } finally {
             clearTimeout(safetyTimer);
             setLoading(null);
@@ -687,7 +687,8 @@ const Stake: React.FC = () => {
             showAlert('Success: Withdrawal completed!');
             await updateStakes();
         } catch (err: any) {
-            showAlert(parseEthersError(err));
+            const detailed = parseDetailedError(err, 'withdraw');
+            showAlert(detailed.reason, detailed.title, detailed.suggestion, detailed.type);
         } finally {
             setLoading(null);
         }
